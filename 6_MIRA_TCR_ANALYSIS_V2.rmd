@@ -1,0 +1,556 @@
+---
+title: "R Notebook"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(Biostrings)
+library(tidyverse)
+library(ggsci)
+library(doParallel)
+library(foreach)
+```
+
+
+# Do we have TCRs for the omicron mutated peps?
+
+
+```{r}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
+MUTATIONS
+```
+
+# Read in Fitness Data
+
+```{r}
+
+FITNESS_DATA=readRDS("LR_IMMUNO_FITNESS_DATA_TRAPP.rds")
+
+```
+
+# Read in MIRA
+- Just anchor the dataset and create a group for mutated in omi or not
+```{r}
+
+MIRA_DATASET = fread(cmd = 'unzip -p MIRA_DATA_FULL.txt.zip')
+
+MIRA_DATASET=MIRA_DATASET %>% mutate(Omicron_mutated = ifelse(Peptide %in% MUTATIONS$Peptide, "OMICRON_MUTATED","WT"))
+
+MIRA_DATASET %>% head()
+MIRA_DATASET=MIRA_DATASET%>% filter(! Cohort %in% "Healthy (No known exposure)")
+
+```
+
+# CLASS I Only and Get rid unproductive TCRs
+
+```{r}
+
+MIRA_DATASET=MIRA_DATASET %>% filter(! TCR %in% grep("unproductive",TCR, value = TRUE))
+MIRA_DATASET=MIRA_DATASET %>% filter(Data_Class == "ClassI")
+
+```
+
+# How many patients per cohort
+
+```{r,dpi=300}
+#Determine each patient and cohort combo
+PATIENTS_AND_COHORTS=MIRA_DATASET %>% select(Experiment, Cohort) %>%unique
+PATIENTS_AND_COHORTS %>% group_by(Cohort) %>% dplyr::summarise(n=n())%>%arrange(desc(n))%>%
+    ggbarplot(x="Cohort",y="n",label=T,fill="Cohort")+ylab("Number of Patients")+theme(legend.position = "none")+coord_flip()
+
+MIRA_DATASET %>% select(Cohort,TCR) %>% group_by(Cohort) %>% dplyr::summarise(n=n_distinct(TCR))%>%
+    ggbarplot(x="Cohort",y="n",fill="Cohort")+ylab("Number of Unique TCRs")+theme(legend.position = "none")+coord_flip()
+
+```
+
+# How many observations are mutated/not out of entire mira data?
+- 5% of the dataset is composed of epitopes which are mutated in Omicron
+
+
+```{r}
+
+MIRA_DATASET %>% select(Omicron_mutated) %>% table
+MIRA_DATASET %>% select(Omicron_mutated) %>% table %>% prop.table()
+
+MIRA_DATASET %>% head
+```
+
+# What % of patient TCR-Epitope repertoires are mutated?
+
+- One 'Non-acute' patient with >20% of their TCR-Epitope repertoire exhibiting mutation
+- 18/124 patients with >10% of their TCR-Epitope repertoire exhibiting mutation
+
+
+
+## Class I only
+
+
+```{r,dpi=300, fig.width = 13}
+
+FREQ_EP_REP_MIRA_PLT=MIRA_DATASET %>% filter(Data_Class == "ClassI")%>% group_by(Experiment,Cohort,Omicron_mutated) %>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>% ungroup%>%
+    tidyr::complete_(cols = c("Experiment", "Omicron_mutated"), fill = list(n=0, Freq=0))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>% drop_na()%>%
+    ggbarplot(x="Experiment",y="Freq",fill="Cohort",palette = "jco")+rotate_x_text()+ylab("Freq. TCR-Epitope Repertoire")+xlab("Subject ID")
+FREQ_EP_REP_MIRA_PLT
+saveRDS(FREQ_EP_REP_MIRA_PLT,file="FREQ_EP_REP_MIRA_PLT.rds")
+MIRA_DATASET %>% filter(Data_Class == "ClassI")%>% group_by(Experiment,Cohort,Omicron_mutated) %>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>% filter(Freq>0.1)%>% nrow
+
+MIRA_DATASET %>% filter(Data_Class == "ClassI")%>% group_by(Experiment,Cohort,Omicron_mutated) %>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>% nrow
+
+# Freq of Ep-TCR repertoire that is mutated
+TCR_EPITOPE_REP_ANALYSIS_DT=MIRA_DATASET %>% filter(Data_Class == "ClassI")%>% group_by(Experiment,Cohort,Omicron_mutated) %>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>% ungroup%>%
+    tidyr::complete_(cols = c("Experiment", "Omicron_mutated"), fill = list(n=0, Freq=0))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>% dplyr::rename(TCR_EP_FREQ = Freq)%>% select(Experiment, TCR_EP_FREQ)
+
+```
+
+# What proportion of epitope repertoire are affected?
+
+
+```{r,dpi=300, fig.width = 13}
+
+MIRA_DATASET %>% select(Experiment, Peptide,Cohort, Omicron_mutated)%>% distinct() %>% group_by(Experiment,Cohort, Omicron_mutated)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%ungroup %>%
+    tidyr::complete_(cols = c("Experiment", "Omicron_mutated"), fill = list(n=0, Freq=0))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>%
+    ggbarplot(x="Experiment",y="Freq",fill="Cohort")+rotate_x_text()
+
+# Frequency of patient epitopes that are mutated
+EP_REP_DT=MIRA_DATASET %>% select(Experiment, Peptide,Cohort, Omicron_mutated)%>% distinct() %>% group_by(Experiment,Cohort, Omicron_mutated)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%ungroup %>%
+    tidyr::complete_(cols = c("Experiment", "Omicron_mutated"), fill = list(n=0, Freq=0))%>%
+    filter(Omicron_mutated == "OMICRON_MUTATED")%>% arrange(desc(Freq))%>% dplyr::rename(EP_FREQ = Freq)%>% select(Experiment, EP_FREQ)
+
+```
+
+# What is the breadth of the different individual's TCR-Epitope repertoires
+
+```{r}
+BREADTH_DT=MIRA_DATASET %>% select(Experiment, Cohort, TCR, Peptide) %>% distinct()%>% group_by(Experiment,Cohort) %>% dplyr::summarise(SIZE_TCR_EP_REP=n())
+BREADTH_DT%>%arrange(desc(SIZE_TCR_EP_REP))%>%
+    ggbarplot(x="Experiment",y="SIZE_TCR_EP_REP",fill="Cohort")+rotate_x_text()
+
+```
+
+# Integrate LR Immuno with MIRA
+
+- First, try matching pMHC. To do this, I must first exclude patients without HLA information.
+- Then, I will try and match predicted pMHC with peptide and HLA of patients
+- Below tries by using BA as a binder cut off
+-
+```{r,dpi=300, fig.width = 13}
+
+PMHC_LIST=FITNESS_DATA %>% select(Peptide, Predicted_Binding)%>% distinct()%>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% mutate(HLA_Allele = gsub("HLA-","",HLA_Allele))
+# Start simply, filtering by those ~50 peptides which we can generate 'LR Immuno' for
+MIRA_DATASET %>% select(Experiment, `HLA-A`:`HLA-C_1`,Peptide)%>% distinct()%>% drop_na()%>% filter(Peptide %in% PMHC_LIST$Peptide)%>%
+        inner_join(PMHC_LIST)
+
+n <- 2
+pat <- paste0('^([^:]+(?::[^:]+){',2-1,'}).*')
+
+N_PEP_BEFORE=MIRA_DATASET %>% select(Experiment, `HLA-A`:`HLA-C_1`,Peptide)%>% distinct()%>% drop_na()%>% filter(Peptide %in% PMHC_LIST$Peptide)%>%
+        pivot_longer(cols = c("HLA-A","HLA-A_1","HLA-B","HLA-B_1","HLA-C","HLA-C_1"))%>% select(!name)%>% distinct()%>%
+        mutate(value = sub(pat, '\\1', value))%>% mutate(value = gsub("[^[:alnum:][:space:]]","",value))%>%
+        dplyr::rename(HLA_Allele = value)%>% group_by(Experiment)%>% dplyr::summarise(N_PEP_B4=n_distinct(Peptide))
+
+N_PEP_AFTER=MIRA_DATASET %>% select(Experiment, `HLA-A`:`HLA-C_1`,Peptide)%>% distinct()%>% drop_na()%>% filter(Peptide %in% PMHC_LIST$Peptide)%>%
+        pivot_longer(cols = c("HLA-A","HLA-A_1","HLA-B","HLA-B_1","HLA-C","HLA-C_1"))%>% select(!name)%>% distinct()%>%
+        mutate(value = sub(pat, '\\1', value))%>% mutate(value = gsub("[^[:alnum:][:space:]]","",value))%>%
+        dplyr::rename(HLA_Allele = value)%>% inner_join(PMHC_LIST)%>%
+        group_by(Experiment)%>% dplyr::summarise(N_PEP_AFTER=n_distinct(Peptide))
+
+N_PEP_BEFORE %>% inner_join(N_PEP_AFTER)%>% mutate(Freq = N_PEP_AFTER/N_PEP_B4)%>%arrange(desc(Freq))%>%
+        ggbarplot(x="Experiment",y="Freq")+rotate_x_text()
+
+N_PEP_BEFORE %>% inner_join(N_PEP_AFTER)%>% mutate(Freq = N_PEP_AFTER/N_PEP_B4)%>%arrange(desc(Freq)) %>% filter(Freq>0.5)%>% nrow
+N_PEP_BEFORE %>% inner_join(N_PEP_AFTER)%>% mutate(Freq = N_PEP_AFTER/N_PEP_B4)%>%arrange(desc(Freq)) %>% filter(Freq>0.7)%>% nrow
+
+```
+
+-- try EL. Even worse consistency with the data.
+
+
+```{r}
+
+
+# Class I WUHAN
+TEST_DATA_LOCATION = "DATA/SARS_COV2_DATA_DEC21/NETMHCPAN_CLASSI"
+
+data_path <- TEST_DATA_LOCATION
+files <- dir(data_path, pattern = "NetMHC_Results.csv")
+
+data3 <- data_frame(file = files) %>%
+  mutate(file_contents = map(file,
+                             ~ fread(file.path(data_path, .),skip = 1))
+  )
+
+ Netmhcpanres <- unnest(data3)
+ Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+ Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
+
+NETMHC_CLASSI=Netmhcpanres
+
+NETMHC_CLASSI %>% head
+
+NETMHC_CLASSI=NETMHC_CLASSI %>% select(Peptide, HLA_Allele, Binder)%>% distinct()
+NETMHC_CLASSI=NETMHC_CLASSI %>% filter(Binder == "BINDER")
+#NETMHC_CLASSI=NETMHC_CLASSI %>% filter(Peptide %in% PMHC_LIST$Peptide)
+NETMHC_CLASSI=NETMHC_CLASSI %>% select(!Binder)%>% mutate(HLA_Allele = gsub("HLA-","",HLA_Allele))
+```
+
+```{r}
+
+N_PEP_AFTER=MIRA_DATASET %>% select(Experiment, `HLA-A`:`HLA-C_1`,Peptide)%>% distinct()%>% drop_na()%>% filter(Peptide %in% PMHC_LIST$Peptide)%>%
+        pivot_longer(cols = c("HLA-A","HLA-A_1","HLA-B","HLA-B_1","HLA-C","HLA-C_1"))%>% select(!name)%>% distinct()%>%
+        mutate(value = sub(pat, '\\1', value))%>% mutate(value = gsub("[^[:alnum:][:space:]]","",value))%>%
+        dplyr::rename(HLA_Allele = value)%>% inner_join(NETMHC_CLASSI)%>%
+        group_by(Experiment)%>% dplyr::summarise(N_PEP_AFTER=n_distinct(Peptide))
+
+N_PEP_BEFORE %>% inner_join(N_PEP_AFTER)%>% mutate(Freq = N_PEP_AFTER/N_PEP_B4)%>%arrange(desc(Freq)) %>% filter(Freq>0.5)%>% nrow
+N_PEP_BEFORE %>% inner_join(N_PEP_AFTER)%>% mutate(Freq = N_PEP_AFTER/N_PEP_B4)%>%arrange(desc(Freq)) %>% filter(Freq>0.7)%>% nrow
+
+
+```
+
+## Integrate 'pan-peptide' LR_Immuno
+- Class I only
+```{r}
+MIRA_DATASET %>% head
+MIRA_DATASET %>% select(Peptide)%>% distinct()%>% nrow()
+MIRA_DATASET%>% select(Peptide, Omicron_mutated)%>% distinct()%>% select(Omicron_mutated)%>% table()
+```
+
+- NOTE: HERE "NON MUTATED LR IMMUNO" contains epitopes which are mutated but we do not have TCRs for
+- This needs fixing in future versions
+
+```{r}
+FITNESS_DATA_FULL = readRDS("LR_IMMUNO_FITNESS_DATA_TRAPP.rds")
+FITNESS_DATA_FULL=FITNESS_DATA_FULL %>% mutate(MT_ImmunogenicityPrediction = ifelse(OmicronPrediction<0.5, "Negative","Positive")) %>% mutate(WT_ImmunogenicityPrediction = ifelse(WuhanPrediction<0.5, "Negative","Positive"))
+
+N_MT=FITNESS_DATA_FULL %>% filter(MT_ImmunogenicityPrediction == "Positive") %>%group_by(Peptide) %>% dplyr::summarise(N_MT=n())
+N_WT=FITNESS_DATA_FULL %>% filter(WT_ImmunogenicityPrediction == "Positive") %>%group_by(Peptide) %>% dplyr::summarise(N_WT=n())
+
+LOSS_PMHC=N_WT %>% inner_join(N_MT)%>% mutate(LosspMHC = ifelse(N_WT>N_MT, TRUE, FALSE))%>% filter(LosspMHC == TRUE)%>% pull(Peptide)
+
+LR_IMMUNO=readRDS("LR_IMMUNO_FITNESS_DATA_PAN_PEPTIDE.rds")%>% select(Peptide,VariantAlignment,LR_Immuno,MT_Binder_Freq)
+LR_IMMUNO
+
+NON_MUTATED_LR_IMMUNO = data.table(Peptide=unique(MIRA_DATASET$Peptide),
+                                   VariantAlignment="NA",
+                                    LR_Immuno=0,
+                                    MT_Binder_Freq=1.0)
+NON_MUTATED_LR_IMMUNO=NON_MUTATED_LR_IMMUNO %>% filter(!Peptide %in% LR_IMMUNO$Peptide)
+LR_IMMUNO=LR_IMMUNO %>% rbind(NON_MUTATED_LR_IMMUNO)
+#LR_IMMUNO=LR_IMMUNO %>% mutate(LossPMHC = ifelse(Peptide %in% LOSS_PMHC, TRUE, FALSE))
+
+
+
+```
+
+```{}
+MIRA_DATASET %>% inner_join(LR_IMMUNO) %>% head(1000)
+```
+
+```{r}
+## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval:
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+```{r}
+TOTAL_EPS_PAT=MIRA_DATASET %>% select(Experiment, Peptide) %>% distinct()%>% mutate(LossPMHC = ifelse(Peptide %in% LOSS_PMHC, TRUE, FALSE)) %>% group_by(Experiment)%>% dplyr::summarise(N_TOT=n())
+MIRA_DATASET %>% select(Experiment, Peptide) %>% distinct()%>% mutate(LossPMHC = ifelse(Peptide %in% LOSS_PMHC, TRUE, FALSE)) %>% group_by(Experiment, LossPMHC) %>% dplyr::summarise(n=n())%>%
+    inner_join(TOTAL_EPS_PAT)%>% mutate(Freq = n/N_TOT)%>% filter(LossPMHC == TRUE)
+
+```
+
+```{r,dpi=300, fig.width = 18}
+
+MIRA_DATASET %>% inner_join(LR_IMMUNO) %>% filter(Experiment %in% 'eAM23')
+
+MIRA_DATASET %>% inner_join(LR_IMMUNO) %>% nrow()
+
+BREADTH_DT = BREADTH_DT%>% select(!Cohort)
+COHORT_LIST = MIRA_DATASET %>% select(Experiment,Cohort) %>% distinct()
+ERROR_DATASET <- summarySE(MIRA_DATASET %>% inner_join(LR_IMMUNO), measurevar="LR_Immuno", groupvars=c("Experiment"))
+MT_BINDER_ERROR_DATASET <- summarySE(MIRA_DATASET %>% inner_join(LR_IMMUNO), measurevar="MT_Binder_Freq", groupvars=c("Experiment"))
+
+TCR_DT=ERROR_DATASET %>% left_join(TCR_EPITOPE_REP_ANALYSIS_DT)%>% left_join(EP_REP_DT)%>% left_join(BREADTH_DT)
+
+```
+
+
+```{r,dpi=300, fig.width = 18}
+
+LR_IMMUNO_PLT_BA1=TCR_DT %>% inner_join(COHORT_LIST)%>%
+  ggplot(aes(x=reorder(Experiment, -LR_Immuno), y=LR_Immuno,fill=Cohort))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=LR_Immuno-se, ymax=LR_Immuno+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Subject ID")+ scale_fill_jco()
+LR_IMMUNO_PLT_BA1
+saveRDS(LR_IMMUNO_PLT_BA1,file="LR_IMMUNO_PLT_BA1.rds")
+
+TCR_DT %>% inner_join(COHORT_LIST)%>%
+  ggplot(aes(x=reorder(Experiment, -LR_Immuno), y=TCR_EP_FREQ,fill=Cohort))+geom_bar(stat = "identity")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Subject ID")
+
+
+TCR_DT %>% inner_join(COHORT_LIST)%>%
+  ggplot(aes(x=reorder(Experiment, -LR_Immuno), y=EP_FREQ,fill=Cohort))+geom_bar(stat = "identity")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Subject ID")
+
+
+TCR_DT %>% inner_join(COHORT_LIST)%>%
+  ggplot(aes(x=reorder(Experiment, -LR_Immuno), y=SIZE_TCR_EP_REP,fill=Cohort))+geom_bar(stat = "identity")+theme_pubr(base_size = 12)+rotate_x_text()+scale_y_log10()+xlab("Subject ID")
+
+
+
+#
+MIRA_DATASET %>% filter(Peptide %in% setdiff(MUTATIONS$Peptide,LR_IMMUNO$Peptide))
+
+```
+
+## Scatter plots
+
+```{r,dpi=300}
+
+TCR_EP_FREQ_PLT_SCATTER =TCR_DT %>% inner_join(COHORT_LIST) %>% ggscatter(x="LR_Immuno",y="TCR_EP_FREQ",color="Cohort", # Points color, shape and size
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.sep = "\n"))+theme_pubr(base_size = 16)+ scale_color_jco()+xlab("Subject RI Score")+ylab("Freq. TCRs recognising mutated epitope")
+TCR_EP_FREQ_PLT_SCATTER
+saveRDS(TCR_EP_FREQ_PLT_SCATTER,file="TCR_EP_FREQ_PLT_SCATTER.rds")
+
+EP_FREQ_PLT_SCATTER=TCR_DT %>% inner_join(COHORT_LIST) %>% ggscatter(x="LR_Immuno",y="EP_FREQ",color="Cohort", # Points color, shape and size
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.sep = "\n"))+theme_pubr(base_size = 16)+ scale_color_jco()+xlab("Subject RI Score")+ylab("Freq. mutated epitopes")
+EP_FREQ_PLT_SCATTER
+saveRDS(EP_FREQ_PLT_SCATTER,file="EP_FREQ_PLT_SCATTER.rds")
+
+SIZE_TCR_EP_REP_PLT_SCATTER=TCR_DT %>% inner_join(COHORT_LIST) %>% ggscatter(x="LR_Immuno",y="SIZE_TCR_EP_REP",color="Cohort", # Points color, shape and size
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.sep = "\n"))+theme_pubr(base_size = 16)+scale_y_log10()+ scale_color_jco()+xlab("Subject RI Score")+
+  ylab("# TCR-Epitope samples in repertoire")
+SIZE_TCR_EP_REP_PLT_SCATTER
+saveRDS(SIZE_TCR_EP_REP_PLT_SCATTER,file="SIZE_TCR_EP_REP_PLT_SCATTER.rds")
+
+Age_DT=MIRA_DATASET %>% select(Experiment,Age)%>% distinct()%>% filter(! Age == 'N/A')%>% mutate(Age =as.numeric(Age))
+
+AGE_PLT_SCATTER=TCR_DT %>% inner_join(COHORT_LIST) %>% inner_join(Age_DT)%>%
+    ggscatter(x="LR_Immuno",y="Age",color="Cohort", # Points color, shape and size
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.sep = "\n"))+theme_pubr(base_size = 16)+scale_y_log10()+ scale_color_jco()+xlab("Subject RI Score")+
+  ylab("Age")
+AGE_PLT_SCATTER
+saveRDS(AGE_PLT_SCATTER,file="AGE_PLT_SCATTER.rds")
+
+```
+
+# What HLAs of patients with most impairment?
+
+```{r,dpi=300}
+
+MIRA_CLINICAL = fread("MIRA_clinical_only.txt")
+MOST_IMPAIRED_PATS=TCR_DT %>% arrange((LR_Immuno))%>% filter(LR_Immuno< -0.075)%>% pull(Experiment)
+MOST_IMPAIRED_PATS
+
+FULL_HLA_DISTR=MIRA_CLINICAL%>%select(Experiment, `HLA-A`:`HLA-C_1`)%>%
+        pivot_longer(cols = c("HLA-A","HLA-A_1","HLA-B","HLA-B_1","HLA-C","HLA-C_1"))%>% select(!name)%>% drop_na()%>% distinct()%>%
+        mutate(value = sub(pat, '\\1', value))%>% mutate(value = gsub("[^[:alnum:][:space:]]","",value))%>%
+        dplyr::rename(HLA_Allele = value)%>% group_by(HLA_Allele)%>% dplyr::summarise(N_FULL=n())
+
+#MIRA_CLINICAL %>% filter(Experiment %in% MOST_IMPAIRED_PATS)
+
+MIRA_CLINICAL %>% filter(Experiment %in% MOST_IMPAIRED_PATS)%>%select(Experiment, `HLA-A`:`HLA-C_1`)%>%
+        pivot_longer(cols = c("HLA-A","HLA-A_1","HLA-B","HLA-B_1","HLA-C","HLA-C_1"))%>% select(!name)%>% drop_na()%>% distinct()%>%
+        mutate(value = sub(pat, '\\1', value))%>% mutate(value = gsub("[^[:alnum:][:space:]]","",value))%>%
+        dplyr::rename(HLA_Allele = value)%>% group_by(HLA_Allele)%>% dplyr::summarise(n=n())%>%
+        inner_join(FULL_HLA_DISTR)%>% mutate(Normalised = n/N_FULL)%>%
+        ggplot(aes(x=reorder(HLA_Allele, -Normalised), y=Normalised,label=n))+geom_bar(stat = "identity", fill="lightgrey")+theme_pubr()+rotate_x_text()+geom_text()
+
+
+
+```
+
+
+# Enrichment for pub private TCRs recognising mutated eps ?
+- No enrichment
+-
+```{r}
+
+N_TOT_TCR=MIRA_DATASET %>% filter(Experiment %in% MOST_IMPAIRED_PATS) %>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+  group_by(Experiment)%>% dplyr::summarise(N_TOT_TCR=n())
+
+PRIV_PUB_DT_IMPAIRED=MIRA_DATASET %>% filter(Experiment %in% MOST_IMPAIRED_PATS)%>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+        group_by(Experiment,Pub_Priv_TCR) %>% dplyr::summarise(n = n())%>% inner_join(N_TOT_TCR)%>% mutate(Freq=n/N_TOT_TCR)%>% mutate(Dataset = "IMPAIRED")
+
+
+REST_N_TOT_TCR=MIRA_DATASET %>% filter(!Experiment %in% MOST_IMPAIRED_PATS) %>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+  group_by(Experiment)%>% dplyr::summarise(N_TOT_TCR=n())
+
+PRIV_PUB_DT_REST=MIRA_DATASET %>% filter(!Experiment %in% MOST_IMPAIRED_PATS)%>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+        group_by(Experiment,Pub_Priv_TCR) %>% dplyr::summarise(n = n())%>% inner_join(REST_N_TOT_TCR)%>% mutate(Freq=n/N_TOT_TCR)%>% mutate(Dataset = "REMAINING")
+
+
+PRIV_PUB_DT_IMPAIRED %>% rbind(PRIV_PUB_DT_REST)%>% filter(Pub_Priv_TCR == "Private_TCR")%>%
+        ggboxplot(x="Dataset",y="Freq",add="jitter")+stat_compare_means()
+
+
+```
+
+# What epitopes are commonly observed in most impaired individuals ?
+- So LWP, TLAC, WLLWP, WPV are just commonly observed in both
+- SVN*, YFP, CND, CND, FCDN, are observed at different proportions in these individuals, arguing our point about rwsponses dominant to epitopes of interesy
+```{r,dpi=300, fig.width = 10}
+
+Impair_Freq_DT=MIRA_DATASET %>% filter(Experiment %in% MOST_IMPAIRED_PATS) %>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+        group_by(Peptide)%>% dplyr::summarise(n=n())%>% mutate(Impair_Freq=n/sum(n))%>%arrange(desc(Impair_Freq))%>% select(!n)
+
+REMAINING_FREQ_DT=MIRA_DATASET %>% filter(!Experiment %in% MOST_IMPAIRED_PATS) %>% filter(Omicron_mutated=="OMICRON_MUTATED")%>%
+        group_by(Peptide)%>% dplyr::summarise(n=n())%>% mutate(REMAINING_Freq=n/sum(n))%>% select(!n)
+
+Impair_Freq_DT %>% inner_join(REMAINING_FREQ_DT)%>%
+    ggplot(aes(x=reorder(Peptide, -Impair_Freq), y=Impair_Freq))+geom_bar(stat = "identity")+rotate_x_text()+ylim(0,0.2)
+
+Impair_Freq_DT %>% inner_join(REMAINING_FREQ_DT)%>%
+    ggplot(aes(x=reorder(Peptide, -Impair_Freq), y=REMAINING_Freq))+geom_bar(stat = "identity")+rotate_x_text()+ylim(0,0.2)
+
+Impair_Freq_DT %>% inner_join(REMAINING_FREQ_DT) %>% pivot_longer(cols = c("Impair_Freq","REMAINING_Freq"))%>%
+        ggbarplot(x="Peptide",y="value",fill="name",position = position_dodge())+theme_pubr(base_size = 12)+rotate_x_text()+ylab("Freq. observed / total mutated eps")
+
+```
+
+## position dodge by impaired vs remainig.
+```{,dpi=300, fig.width = 12}
+# Freq of mutated repertoire
+MIRA_DATASET=MIRA_DATASET %>% mutate(Impaired_Pat = ifelse(Experiment %in% MOST_IMPAIRED_PATS, "Impaired","Remaining"))
+
+EPITOPE_BIAS_ANALYSIS_DT=MIRA_DATASET%>% select(Experiment, Peptide,TCR,Omicron_mutated,Impaired_Pat) %>% distinct()%>% filter(Omicron_mutated=="OMICRON_MUTATED")%>% ungroup() %>% dplyr::count(Experiment, Impaired_Pat,Peptide) %>% add_count(Experiment, wt=n, name="nn")%>% mutate(Freq = n/nn)
+
+EPITOPE_BIAS_ANALYSIS_DT
+
+EPITOPE_DOMINANCE_IMPAIRED_SET_PLT=summarySE(EPITOPE_BIAS_ANALYSIS_DT, measurevar="Freq", groupvars=c("Impaired_Pat","Peptide"))%>%
+  inner_join(LR_IMMUNO)%>% mutate(RI_Binary = ifelse(LR_Immuno<0,"RI<0","RI>0"))%>%
+  ggplot(aes(x=reorder(Peptide, -Freq), y=Freq,fill=Impaired_Pat))+geom_bar(stat = "identity",position = position_dodge())+
+    geom_errorbar(aes(ymin=Freq-se, ymax=Freq+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+facet_grid(~RI_Binary,scales="free_x")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Freq. mutated epitopes/patient")#+ scale_fill_jco()
+EPITOPE_DOMINANCE_IMPAIRED_SET_PLT
+saveRDS(EPITOPE_DOMINANCE_IMPAIRED_SET_PLT,file="EPITOPE_DOMINANCE_IMPAIRED_SET_PLT.rds")
+# Freq of entire repertoire
+MUT_PEPS= MIRA_DATASET%>% filter(Omicron_mutated=="OMICRON_MUTATED") %>% pull(Peptide) %>% unique()
+EPITOPE_BIAS_ANALYSIS_DT=MIRA_DATASET%>% select(Experiment, Peptide,TCR,Omicron_mutated,Impaired_Pat) %>% distinct()%>% ungroup() %>% dplyr::count(Experiment, Impaired_Pat,Peptide) %>% add_count(Experiment, wt=n, name="nn")%>% mutate(Freq = n/nn)%>% filter(Peptide %in% MUT_PEPS)
+
+EPITOPE_BIAS_ANALYSIS_DT
+
+summarySE(EPITOPE_BIAS_ANALYSIS_DT, measurevar="Freq", groupvars=c("Impaired_Pat","Peptide"))%>%
+  inner_join(LR_IMMUNO)%>% mutate(RI_Binary = ifelse(LR_Immuno<0,"RI<0","RI>0"))%>%
+  ggplot(aes(x=reorder(Peptide, -Freq), y=Freq,fill=Impaired_Pat))+geom_bar(stat = "identity",position = position_dodge())+
+    geom_errorbar(aes(ymin=Freq-se, ymax=Freq+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+facet_grid(~RI_Binary,scales="free_x")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Freq. epitopes/patient")#+ scale_fill_jco()
+
+
+
+```
+
+
+```{,dpi=300, fig.width = 12}
+# Freq of mutated repertoire
+MIRA_DATASET=MIRA_DATASET %>% mutate(Impaired_Pat = ifelse(Experiment %in% MOST_IMPAIRED_PATS, "Impaired","Remaining"))
+
+EPITOPE_BIAS_ANALYSIS_DT=MIRA_DATASET%>% select(Experiment, Peptide,TCR,Omicron_mutated,Impaired_Pat) %>% distinct()%>% filter(Omicron_mutated=="OMICRON_MUTATED")%>% ungroup() %>% dplyr::count(Experiment, Impaired_Pat,Peptide) %>% add_count(Experiment, wt=n, name="nn")%>% mutate(Freq = n/nn)
+
+EPITOPE_BIAS_ANALYSIS_DT
+
+EPITOPE_DOMINANCE_IMPAIRED_SET_PLT=summarySE(EPITOPE_BIAS_ANALYSIS_DT, measurevar="Freq", groupvars=c("Impaired_Pat","Peptide"))%>%
+  inner_join(LR_IMMUNO)%>% mutate(RI_Binary = ifelse(LR_Immuno<0,"RI<0","RI>0"))%>%
+  ggplot(aes(x=reorder(Peptide, -Freq), y=Freq,fill=LR_Immuno))+geom_bar(stat = "identity",position = position_dodge())+
+    geom_errorbar(aes(ymin=Freq-se, ymax=Freq+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+facet_grid(~Impaired_Pat,scales="free_x")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Freq. mutated epitopes/patient")#+ scale_fill_jco()
+EPITOPE_DOMINANCE_IMPAIRED_SET_PLT
+saveRDS(EPITOPE_DOMINANCE_IMPAIRED_SET_PLT,file="EPITOPE_DOMINANCE_IMPAIRED_SET_PLT.rds")
+# Freq of entire repertoire
+MUT_PEPS= MIRA_DATASET%>% filter(Omicron_mutated=="OMICRON_MUTATED") %>% pull(Peptide) %>% unique()
+EPITOPE_BIAS_ANALYSIS_DT=MIRA_DATASET%>% select(Experiment, Peptide,TCR,Omicron_mutated,Impaired_Pat) %>% distinct()%>% ungroup() %>% dplyr::count(Experiment, Impaired_Pat,Peptide) %>% add_count(Experiment, wt=n, name="nn")%>% mutate(Freq = n/nn)%>% filter(Peptide %in% MUT_PEPS)
+
+EPITOPE_BIAS_ANALYSIS_DT
+
+summarySE(EPITOPE_BIAS_ANALYSIS_DT, measurevar="Freq", groupvars=c("Impaired_Pat","Peptide"))%>%
+  inner_join(LR_IMMUNO)%>% mutate(RI_Binary = ifelse(LR_Immuno<0,"RI<0","RI>0"))%>%
+  ggplot(aes(x=reorder(Peptide, -Freq), y=Freq,fill=LR_Immuno))+geom_bar(stat = "identity",position = position_dodge())+
+    geom_errorbar(aes(ymin=Freq-se, ymax=Freq+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+facet_grid(~Impaired_Pat,scales="free_x")+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Freq. epitopes/patient")#+ scale_fill_jco()
+
+DT_SCATTER=summarySE(EPITOPE_BIAS_ANALYSIS_DT, measurevar="Freq", groupvars=c("Impaired_Pat","Peptide"))%>%
+  inner_join(LR_IMMUNO)%>% mutate(RI_Binary = ifelse(LR_Immuno<0,"RI<0","RI>0"))
+LABEL_PEPS=DT_SCATTER %>% filter(LR_Immuno>0.5 | LR_Immuno< -4.0)%>% select(Peptide)%>% mutate(label = Peptide)
+
+DT_SCATTER %>% left_join(LABEL_PEPS) %>% select(Impaired_Pat, Peptide, Freq, LR_Immuno, label) %>% replace(is.na(.), "") %>%
+  ggscatter(x="LR_Immuno",y="Freq",color="Impaired_Pat",label="label")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

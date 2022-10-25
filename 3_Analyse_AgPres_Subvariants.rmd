@@ -1,0 +1,373 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(Biostrings)
+library(tidyverse)
+library(foreach)
+library(stringdist)
+library(doParallel)
+library(stringr)
+
+```
+
+# Combine data to create 'FULL MUTATIONS DT'
+
+```{r}
+
+#OLD_BA2_WT_BINDING_SCORES =readRDS("BA2_WUHAN_PEPTIDES_BINDING_SCORES.rds")
+#OLD_BA2_MT_BINDING_SCORES =readRDS("BA2_MT_PEPTIDES_BINDING_SCORES.rds")
+#OLD_BA2_MUTATIONS = readRDS("Variant_Mutations/BA2_EPITOPE_MUTATIONS.rds")
+
+
+BA2_WT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA2_WT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA2")
+BA2_MT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA2_MT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA2")
+BA2_MUTATIONS = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA2_EPITOPE_MUTATIONS.rds")%>% mutate(Variant = "BA2")
+
+BA5_WT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA5_WT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA5")
+BA5_MT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA5_MT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA5")
+BA5_MUTATIONS = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA5_EPITOPE_MUTATIONS.rds") %>% mutate(Variant = "BA5")
+
+
+BA4_WT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA4_WT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA4")
+BA4_MT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA4_MT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA4")
+BA4_MUTATIONS = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA4_EPITOPE_MUTATIONS.rds") %>% mutate(Variant = "BA4")
+
+BA275_WT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA275_WT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA2_75")
+BA275_MT_BINDING_SCORES = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA275_MT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "BA2_75")
+BA275_MUTATIONS = readRDS("OMICRON_SUBVARIANTS_ANALYSIS/BA275_EPITOPE_MUTATIONS.rds") %>% mutate(Variant = "BA2_75")
+
+FULL_MUTATIONS_DT_BA275 = BA275_MUTATIONS %>% inner_join(BA275_WT_BINDING_SCORES) %>% inner_join(BA275_MT_BINDING_SCORES)
+
+
+FULL_MUTATIONS_DT_BA4 = BA4_MUTATIONS %>% inner_join(BA4_WT_BINDING_SCORES) %>% inner_join(BA4_MT_BINDING_SCORES)
+
+#FULL_MUTATIONS_DT_OLD_BA2=OLD_BA2_MUTATIONS %>% inner_join(OLD_BA2_WT_BINDING_SCORES) %>% inner_join(OLD_BA2_MT_BINDING_SCORES)
+
+FULL_MUTATIONS_DT_BA2=BA2_MUTATIONS %>% inner_join(BA2_WT_BINDING_SCORES) %>% inner_join(BA2_MT_BINDING_SCORES)
+FULL_MUTATIONS_DT_BA5=BA5_MUTATIONS %>% inner_join(BA5_WT_BINDING_SCORES) %>% inner_join(BA5_MT_BINDING_SCORES)
+
+FULL_MUTATIONS_DT = rbind(FULL_MUTATIONS_DT_BA2, FULL_MUTATIONS_DT_BA5, FULL_MUTATIONS_DT_BA4)
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT%>% ungroup()
+saveRDS(FULL_MUTATIONS_DT,"SUBVARIANTS_FULL_MUTATIONS_DT.rds")
+## MUTATIONS_DT_SUBVAR
+SUBVAR_MUTATIONS=BA2_MUTATIONS %>% rbind(BA4_MUTATIONS)%>% rbind(BA5_MUTATIONS)#%>% rbind(BA275_MUTATIONS)
+
+MUTATION_LIST= fread("SUBVARIANT_SNPS.csv")
+MUTATION_LIST=MUTATION_LIST %>% mutate(MutationPos = parse_number(Mutation))
+
+SUBVAR_MUTATIONS=SUBVAR_MUTATIONS %>% separate_rows_(cols = "MutationPos",sep=",")%>% mutate(MutationPos =as.numeric(MutationPos)) %>% left_join(MUTATION_LIST)
+SUBVAR_MUTATIONS=SUBVAR_MUTATIONS %>% group_by(Peptide, VariantAlignment,start_pos,Protein,Variant)%>%
+  dplyr::summarise(MutationPos=paste0(MutationPos,collapse = ","),
+                   Mutation = paste0(Mutation, collapse = ","))%>% ungroup
+SUBVAR_MUTATIONS=SUBVAR_MUTATIONS %>% mutate(Hamming = stringdist::stringdist(Peptide,VariantAlignment,method="hamming"))
+
+#saveRDS(SUBVAR_MUTATIONS,"OMICRON_EPITOPE_MUTATIONS_SUBVAR.rds")
+
+```
+
+# Compare old vs . new BA2
+
+```{r}
+
+AGRETOPICITY_DT_BA2=FULL_MUTATIONS_DT_BA2 %>% ungroup%>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder) %>%
+        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>% mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
+
+#AGRETOPICITY_DT_OLD_BA2=FULL_MUTATIONS_DT_OLD_BA2%>% ungroup %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder) %>%
+ #       separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>% mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
+
+AGRETOPICITY_DT_BA2 %>% nrow
+#AGRETOPICITY_DT_OLD_BA2 %>% nrow
+
+#setdiff(AGRETOPICITY_DT_BA2, AGRETOPICITY_DT_OLD_BA2)
+
+```
+
+# Create Agretopicity DT
+
+```{r}
+
+
+AGRETOPICITY_DT=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder, Variant) %>%
+        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>% mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))
+AGRETOPICITY_DT %>% head
+AGRETOPICITY_DT=AGRETOPICITY_DT %>% mutate(Agretopicity = MT_nM_41/nM_41)
+
+SPIKE_AGRETOPICITY=AGRETOPICITY_DT %>% filter(Protein == 'surface glycoprotein') %>% mutate(Length = nchar(Peptide))
+
+SPIKE_AGRETOPICITY %>% group_by(Variant)%>% dplyr::summarise(meanAg = mean(Agretopicity))
+
+saveRDS(AGRETOPICITY_DT,"SUBVARIANTS_AGRETOPICITY_DT.rds")
+
+```
+
+
+```{r}
+
+SPIKE_AGRETOPICITY=SPIKE_AGRETOPICITY %>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))%>% ungroup
+SPIKE_AGRETOPICITY %>% select(Peptide,VariantAlignment) %>% distinct() %>% nrow
+SPIKE_AGRETOPICITY %>% group_by(Variant,Peptide) %>% dplyr::summarise(n=n())
+SPIKE_AGRETOPICITY %>% nrow
+
+SPIKE_AGRETOPICITY %>% group_by(Variant)%>% dplyr::summarise(meanAg = mean(Agretopicity))
+
+```
+
+
+
+
+
+```{r,dpi=300, fig.width = 10}
+SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>% pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = factor(Dataset, levels = c("nM_41","MT_nM_41")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Binding Affinity\n(nM)")+geom_vline(xintercept = 500,linetype="dashed",alpha=0.5)
+
+SUBVAR_ECDF_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>% pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = replace(Dataset, Dataset == "nM_41", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_nM_41", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Log10 Binding Affinity\n(nM)")+geom_vline(xintercept = 500,linetype="dashed",alpha=0.5)+scale_x_log10()
+SUBVAR_ECDF_PLT
+saveRDS(SUBVAR_ECDF_PLT, "SUBVAR_ECDF_PLT.rds")
+
+SUBVAR_VIOLIN_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>% pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "nM_41", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_nM_41", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means()+ylab("Binding Affinity\n(nM)")
+SUBVAR_VIOLIN_PLT
+
+SUBVAR_VIOLIN_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>% pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "nM_41", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_nM_41", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+ylab("Binding Affinity\n(nM)")
+SUBVAR_VIOLIN_PLT
+
+saveRDS(SUBVAR_VIOLIN_PLT, "SUBVAR_VIOLIN_PLT.rds")
+
+
+```
+
+
+```{r}
+AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>% mutate(Allele = gsub("\\*","",Allele))%>% mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
+
+DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT%>% ungroup() %>% filter(Protein == "surface glycoprotein") %>% select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder,Variant) %>% separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>% mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
+
+HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES) %>%
+filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+
+HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(!HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% mutate(Supertype = str_extract(HLA_Allele,"HLA-C[0-9][0-9]"))%>%
+        mutate(Supertype = gsub("HLA\\-","",Supertype))%>%
+filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+
+```
+
+
+
+
+```{r,dpi=300, fig.width  = 11, fig.height = 10}
+
+VARIANT = "BA2"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+VARIANT = "BA4"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+VARIANT = "BA5"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+#VARIANT = "BA2_75"
+#HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+ #       ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = #"center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% select(!Variant)%>% distinct()%>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle("ALL")
+
+
+
+
+
+```
+
+
+
+
+
+```{r,dpi=300, fig.width  = 11, fig.height = 12}
+
+SUBVAR_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Supertype %in% c("A02","A03","B07","C01"))%>%
+        dplyr::rename(Wuhan=nM_41, Omicron = MT_nM_41)%>%
+        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(Variant~Supertype)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")
+
+SUBVAR_SUPERTYPE_BOXPLT
+saveRDS(SUBVAR_SUPERTYPE_BOXPLT,file="SUBVAR_SUPERTYPE_BOXPLT.rds")
+
+```
+
+# All protein
+
+```{r}
+AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>% mutate(Allele = gsub("\\*","",Allele))%>% mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
+
+DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT%>% ungroup()  %>% select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder,Variant) %>% separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>% mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
+
+HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES) %>%
+filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+
+HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(!HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% mutate(Supertype = str_extract(HLA_Allele,"HLA-C[0-9][0-9]"))%>%
+        mutate(Supertype = gsub("HLA\\-","",Supertype))%>%
+filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+
+```
+
+
+
+
+```{r,dpi=300, fig.width  = 11, fig.height = 10}
+
+VARIANT = "BA2"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center",paired = TRUE)+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+VARIANT = "BA4"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center",paired = TRUE)+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+VARIANT = "BA5"
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center",paired = TRUE)+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+#VARIANT = "BA2_75"
+#HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>%
+ #       ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center",paired = TRUE)+#rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle(VARIANT)
+
+HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% select(!Variant)%>% distinct()%>%
+        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center",paired = TRUE)+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")+ggtitle("ALL")
+
+```
+
+
+```{r}
+
+```
+
+# Supplementary
+
+
+```{r}
+
+
+AGRETOPICITY_DT=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, BA_Rank,MT_BA_Rank,Binder,MT_Binder, Variant) %>%
+        separate_rows_(cols = c("Predicted_Binding","BA_Rank","MT_BA_Rank","Binder","MT_Binder"),sep=",") %>% mutate(BA_Rank = as.numeric(BA_Rank)) %>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))
+AGRETOPICITY_DT %>% head
+
+
+SPIKE_AGRETOPICITY=AGRETOPICITY_DT %>% filter(Protein == 'surface glycoprotein') %>% mutate(Length = nchar(Peptide))
+
+
+saveRDS(AGRETOPICITY_DT,"SUBVARIANTS_AGRETOPICITY_DT.rds")
+
+```
+
+
+```{r}
+
+SPIKE_AGRETOPICITY %>% select(Peptide,VariantAlignment) %>% distinct() %>% nrow
+SPIKE_AGRETOPICITY %>% group_by(Variant,Peptide) %>% dplyr::summarise(n=n())
+SPIKE_AGRETOPICITY %>% nrow
+
+```
+
+
+
+
+
+```{r,dpi=300, fig.width = 10}
+SPIKE_AGRETOPICITY=SPIKE_AGRETOPICITY %>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))%>% ungroup
+
+SPIKE_AGRETOPICITY %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = factor(Dataset, levels = c("BA_Rank","MT_BA_Rank")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Binding Affinity\n(nM)")+geom_vline(xintercept = 2,linetype="dashed",alpha=0.5)
+
+SUBVAR_ECDF_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Log10 Binding Affinity\n(nM)")+geom_vline(xintercept = 2,linetype="dashed",alpha=0.5)+scale_x_log10()
+SUBVAR_ECDF_PLT
+saveRDS(SUBVAR_ECDF_PLT, "SUBVAR_RANK_ECDF_PLT.rds")
+
+SUBVAR_VIOLIN_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means()+ylab("Binding Affinity\n(Rank)")
+SUBVAR_VIOLIN_PLT
+
+SUBVAR_VIOLIN_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+ylab("Binding Affinity\n(Rank)")
+SUBVAR_VIOLIN_PLT
+
+saveRDS(SUBVAR_VIOLIN_PLT, "SUBVAR_RANK_VIOLIN_PLT.rds")
+
+
+```
+
+
+
+
+```{r,dpi=300, fig.width = 10}
+AGRETOPICITY_DT=AGRETOPICITY_DT %>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))%>% ungroup
+
+AGRETOPICITY_DT %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = factor(Dataset, levels = c("BA_Rank","MT_BA_Rank")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Binding Affinity\n(Rank)")+geom_vline(xintercept = 2,linetype="dashed",alpha=0.5)
+
+SUBVAR_ECDF_PLT=AGRETOPICITY_DT %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+ylab("Cumulative Freq. of Peptides")+xlab("Log10 Binding Affinity\n(Rank)")+geom_vline(xintercept = 2,linetype="dashed",alpha=0.5)+scale_x_log10()
+SUBVAR_ECDF_PLT
+saveRDS(SUBVAR_ECDF_PLT, "SUBVAR_RANK_ALL_ECDF_PLT.rds")
+
+SUBVAR_VIOLIN_PLT=AGRETOPICITY_DT %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means()+ylab("Binding Affinity\n(Rank)")
+SUBVAR_VIOLIN_PLT
+
+SUBVAR_VIOLIN_PLT=AGRETOPICITY_DT %>% select(Peptide, BA_Rank, MT_BA_Rank, Variant)%>% pivot_longer(cols = c(BA_Rank,MT_BA_Rank), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "BA_Rank", "Wuhan"))%>%mutate(Dataset = replace(Dataset, Dataset == "MT_BA_Rank", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+ylab("Binding Affinity\n(Rank)")
+SUBVAR_VIOLIN_PLT
+
+saveRDS(SUBVAR_VIOLIN_PLT, "SUBVAR_RANK_ALL_VIOLIN_PLT.rds")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

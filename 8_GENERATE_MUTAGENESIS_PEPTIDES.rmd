@@ -1,0 +1,129 @@
+---
+title: "R Notebook"
+output: html_document
+---
+
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+library(purrr)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+# INSILICO_MUTAGENESIS_WUHANOMICRON
+- produce subs, ins, del.
+```{}
+
+MUTATIONS
+
+
+INSILICO_MUTAGENESIS_WUHANOMICRON = foreach(i=1:length(unique(MUTATIONS$Peptide)), .combine = "rbind",.packages = c("data.table","dplyr"))%do%{
+  print(paste0("Processing epitope ",i," of ", length(unique(MUTATIONS$Peptide))))
+  EPITOPE_FOR_ANALYSIS = MUTATIONS$Peptide[i]
+  GENERATED_PEPTIDES = Repitope::InSilicoMutagenesis(MUTATIONS$Peptide[i])
+
+  DT=data.table(AASeq1=EPITOPE_FOR_ANALYSIS,AASeq2=GENERATED_PEPTIDES)
+  DT=DT %>% mutate(Mut_type = case_when(
+    nchar(AASeq1) == nchar(AASeq2) ~ "Substitution",
+    nchar(AASeq1) > nchar(AASeq2) ~ "Deletion",
+    nchar(AASeq2) > nchar(AASeq1) ~ "Insertion"
+  ))
+    DT
+
+
+
+}
+saveRDS(INSILICO_MUTAGENESIS_WUHANOMICRON, file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+
+```
+
+
+
+```{}
+INSILICO_MUTAGENESIS_WUHANOMICRON=readRDS( file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+
+Distinct_mutagenesis_DT=INSILICO_MUTAGENESIS_WUHANOMICRON%>% filter(Mut_type=="Substitution")%>% dplyr::rename(Peptide=AASeq1,VariantAlignment = AASeq2)%>% distinct()
+
+calculateMutation_position_V2 <- function(str1, str2,start_pos) {
+  require(Biostrings)
+  peptide = str1
+  variantalignment = str2
+  alignment = pairwiseAlignment(variantalignment,peptide)
+  str1=as.character(aligned(pattern(alignment)))
+  str2=as.character(aligned(subject(alignment)))
+
+
+
+  str1vec <- unlist(strsplit(str1, ""))
+  str2vec <- unlist(strsplit(str2, ""))
+  iMut <- (1:length(str1vec))[str1vec != str2vec]
+  MUTPOS = (start_pos-1)+iMut
+  return(paste0(MUTPOS))
+}
+
+# Calculate the change from
+calculateMutation_changeFrom <- function(str1, str2,start_pos) {
+  require(Biostrings)
+  peptide = str1
+  variantalignment = str2
+  alignment = pairwiseAlignment(variantalignment,peptide)
+  str1=as.character(aligned(pattern(alignment)))
+  str2=as.character(aligned(subject(alignment)))
+
+
+
+  str1vec <- unlist(strsplit(str1, ""))
+  str2vec <- unlist(strsplit(str2, ""))
+  iMut <- (1:length(str1vec))[str1vec != str2vec]
+  MUTPOS = (start_pos-1)+iMut
+  return(paste0(str2vec[iMut]))
+}
+
+# calculate change toi
+calculateMutation_changeTo <- function(str1, str2,start_pos) {
+  require(Biostrings)
+  peptide = str1
+  variantalignment = str2
+  alignment = pairwiseAlignment(variantalignment,peptide)
+  str1=as.character(aligned(pattern(alignment)))
+  str2=as.character(aligned(subject(alignment)))
+
+
+
+  str1vec <- unlist(strsplit(str1, ""))
+  str2vec <- unlist(strsplit(str2, ""))
+  iMut <- (1:length(str1vec))[str1vec != str2vec]
+  MUTPOS = (start_pos-1)+iMut
+  return(paste0(str1vec[iMut]))
+}
+
+cl <- makeCluster(10)
+registerDoParallel(cl)
+MUTATIONDATA = foreach(i = 1:nrow(Distinct_mutagenesis_DT),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%dopar% {
+
+  mutations = paste0(calculateMutation_position_V2(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+
+  CHANGEFROM = paste0(calculateMutation_changeFrom(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+  CHANGETO = paste0(calculateMutation_changeTo(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+
+  data.table(Peptide = Distinct_mutagenesis_DT$Peptide[i], VariantAlignment=Distinct_mutagenesis_DT$VariantAlignment[i], Protein = Distinct_mutagenesis_DT$Protein[i], SeqMutationPos = mutations, ChangeFrom=CHANGEFROM, ChangeTo=CHANGETO)
+
+}
+parallel::stopCluster(cl)
+saveRDS(MUTATIONDATA, file="INSILICO_MUTAGENESIS_WUHANOMICRON_SUB_MUTATIONDATA.rds")
+```

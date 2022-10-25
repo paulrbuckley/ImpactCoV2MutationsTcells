@@ -1,0 +1,170 @@
+---
+title: "R Notebook"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+library(RColorBrewer)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+```{r,dpi=300, fig.width = 24}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
+FITNESS_DATA=readRDS(file="LR_IMMUNO_FITNESS_DATA_TRAPP.rds")
+SUPERTYPE = fread("HLA_ABC_SUPERTYPES_CLEANED.csv")
+NEW_COL=brewer.pal(3, "Set1")
+NEW_COL = c("#377EB8","#E41A1C","#4DAF4A")
+
+#FITNESS_DATA%>% select(Peptide, VariantAlignment, Predicted_Binding, LR_Immuno) %>%
+#dplyr::rename("HLA Allele"=Predicted_Binding, RI=LR_Immuno)%>% readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy #Group/Effect_Mutation_Tcells/V11/WORKING_VERSION/Supplementary Tables/Table3_RIscores.csv")
+
+LRIMMUNO_PLT= FITNESS_DATA%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(MUTATIONS)%>%
+        filter(Protein == 'surface glycoprotein')%>%ungroup()%>% arrange(desc(LR_Immuno))%>%drop_na()%>% distinct()%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%
+        ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=LR_Immuno, fill=Binder_Grp))+geom_bar(stat="identity")+theme_pubr()+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top")+grids()+xlab("Peptide-MHC")+ scale_fill_manual(values = NEW_COL)+ scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+LRIMMUNO_PLT
+#LRIMMUNO_PLT=LRIMMUNO_PLT+
+ # theme(axis.title.x=element_blank(),
+  #      axis.text.x=element_blank(),
+   #     axis.ticks.x=element_blank())
+
+SPECIFICTY_DT_WIDE=readRDS("SPECIFICTY_DT_WIDE_V3_TRAPP.rds")
+
+REL_SPECIFICITY_PLT=FITNESS_DATA%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(MUTATIONS)%>%
+    filter(Protein == 'surface glycoprotein')%>%
+    left_join(SPECIFICTY_DT_WIDE)%>% distinct()%>% mutate(Relative_TCRSpecificity = ifelse(is.na(Relative_TCRSpecificity), 0, Relative_TCRSpecificity))%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%
+        ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=Relative_TCRSpecificity, fill=Binder_Grp))+geom_bar(stat="identity")+theme_pubr()+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top") +
+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+grids()+xlab("Peptide-MHC")+ylab("RTP")+ scale_fill_manual(values = NEW_COL)
+REL_SPECIFICITY_PLT=REL_SPECIFICITY_PLT+theme(legend.position = "none")
+
+REL_SPECIFICITY_PLT=FITNESS_DATA%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(MUTATIONS)%>%
+    filter(Protein == 'surface glycoprotein')%>%
+    left_join(SPECIFICTY_DT_WIDE)%>% distinct()%>% mutate(Relative_TCRSpecificity = ifelse(is.na(Relative_TCRSpecificity), 0, Relative_TCRSpecificity))%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%inner_join(SUPERTYPE %>% dplyr::rename(Predicted_Binding=HLA_Allele))%>%
+        ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=Relative_TCRSpecificity, fill=OmicronPrediction))+geom_bar(stat="identity")+theme_pubr(base_size = 16)+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top") +
+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+grids()+xlab("Peptide-MHC")+ylab("RTP")+scale_fill_gradient2(
+  low = ("red"),
+  mid = "blue",
+  high = ("green"),
+midpoint = 0.5)#+ scale_fill_manual(values = NEW_COL)
+#REL_SPECIFICITY_PLT=REL_SPECIFICITY_PLT+theme(legend.position = "none")
+REL_SPECIFICITY_PLT
+
+
+
+```
+## Exploring associations between LR Immuno, RTP and HLA
+- nothing really of interest
+```{,dpi=300, fig.width = 24, fig.height = 12}
+DATA_PLT = FITNESS_DATA%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(MUTATIONS)%>%
+    filter(Protein == 'surface glycoprotein')%>%
+    left_join(SPECIFICTY_DT_WIDE)%>% distinct()%>% mutate(Relative_TCRSpecificity = ifelse(is.na(Relative_TCRSpecificity), 0, Relative_TCRSpecificity))%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%inner_join(SUPERTYPE %>% dplyr::rename(Predicted_Binding=HLA_Allele))
+
+DATA_PLT=DATA_PLT %>% filter(Relative_TCRSpecificity>0)
+
+DATA_PLT%>%
+    ggplot(aes(x=pMHC, y=Supertype, color = LR_Immuno, size=Relative_TCRSpecificity))+geom_point()+rotate_x_text()+scale_color_gradient2(
+  low = ("red"),
+  mid = "blue",
+  high = ("green"))
+
+
+
+BindingGrps = unique(DATA_PLT$Binder_Grp)
+BINDER_GRP_i= BindingGrps[1]
+ DATA_PLT   %>%
+        filter(Binder_Grp %in% BINDER_GRP_i)%>%
+    ggplot(aes(x=pMHC, y=Supertype, color = LR_Immuno, size=Relative_TCRSpecificity))+geom_point()+rotate_x_text()+scale_color_gradient2(
+  low = ("red"),
+  mid = "blue",
+  high = ("green"))+ggtitle(BINDER_GRP_i)
+
+BINDER_GRP_i= BindingGrps[2]
+ DATA_PLT   %>%
+        filter(Binder_Grp %in% BINDER_GRP_i)%>%
+    ggplot(aes(x=pMHC, y=Supertype, color = LR_Immuno, size=Relative_TCRSpecificity))+geom_point()+rotate_x_text()+scale_color_gradient2(
+  low = ("red"),
+  mid = "blue",
+  high = ("green"))+ggtitle(BINDER_GRP_i)
+
+BINDER_GRP_i= BindingGrps[3]
+ DATA_PLT   %>%
+        filter(Binder_Grp %in% BINDER_GRP_i)%>%
+    ggplot(aes(x=pMHC, y=Supertype, color = LR_Immuno, size=Relative_TCRSpecificity))+geom_point()+rotate_x_text()+scale_color_gradient2(
+  low = ("red"),
+  mid = "blue",
+  high = ("green"))+ggtitle(BINDER_GRP_i)
+
+```
+
+
+```{r}
+FREQ_EP_REP_MIRA_PLT=readRDS(file="FREQ_EP_REP_MIRA_PLT.rds")
+
+
+```
+
+
+```{r}
+
+LR_IMMUNO_PLT_MIRA_BA2=readRDS(file="LR_IMMUNO_PLT_MIRA_BA2.rds")+ylab("RI Score")+ggsci::scale_fill_jco()
+LR_IMMUNO_PLT_MIRA_BA4=readRDS(file="LR_IMMUNO_PLT_MIRA_BA4.rds")+ylab("RI Score")+ggsci::scale_fill_jco()
+LR_IMMUNO_PLT_MIRA_BA5=readRDS(file="LR_IMMUNO_PLT_MIRA_BA5.rds")+ylab("RI Score")+ggsci::scale_fill_jco()
+
+```
+
+```{r}
+LR_IMMUNO_PLT_BA1=readRDS(file="LR_IMMUNO_PLT_BA1.rds")+theme(legend.position = "none")
+
+BA2_LRIMMUNO_PLT=readRDS( file = paste0("BA2_LRImmuno_SUBVAR_PLT.rds"))+ylab("RI Score")
+BA4_LRIMMUNO_PLT=readRDS( file = paste0("BA4_LRImmuno_SUBVAR_PLT.rds"))+ylab("RI Score")
+BA5_LRIMMUNO_PLT=readRDS( file = paste0("BA5_LRImmuno_SUBVAR_PLT.rds"))+ylab("RI Score")
+
+```
+
+```{r}
+
+TCR_EP_FREQ_PLT_SCATTER=readRDS(file="TCR_EP_FREQ_PLT_SCATTER.rds")
+EP_FREQ_PLT_SCATTER=readRDS(file="EP_FREQ_PLT_SCATTER.rds")
+SIZE_TCR_EP_REP_PLT_SCATTER=readRDS(file="SIZE_TCR_EP_REP_PLT_SCATTER.rds")
+AGE_PLT_SCATTER=readRDS(file="AGE_PLT_SCATTER.rds")
+
+```
+
+
+```{r,dpi=300, fig.width = 24, fig.height = 15}
+
+A_GRID_i = cowplot::plot_grid(LRIMMUNO_PLT+ylab("RI Score"))
+A_GRID_ii = cowplot::plot_grid(REL_SPECIFICITY_PLT)
+B_GRID = cowplot::plot_grid(FREQ_EP_REP_MIRA_PLT)
+C_GRID= cowplot::plot_grid(LR_IMMUNO_PLT_BA1+ggtitle("BA1")+ylab("RI Score"))
+D_GRID = cowplot::plot_grid(LR_IMMUNO_PLT_MIRA_BA2)
+E_GRID = cowplot::plot_grid(LR_IMMUNO_PLT_MIRA_BA4)
+F_GRID = cowplot::plot_grid(LR_IMMUNO_PLT_MIRA_BA5)
+cowplot::plot_grid(A_GRID_i,B_GRID,C_GRID,nrow=3, align="v",axis="l")
+
+```
+
+# Suppl.
+
+```{r,dpi=300, fig.width = 24, fig.height = 36}
+
+SUPP_GRID_A = cowplot::plot_grid(BA2_LRIMMUNO_PLT, BA4_LRIMMUNO_PLT+theme(legend.position = "none"), BA5_LRIMMUNO_PLT+theme(legend.position = "none"),nrow=3, align="hv")
+SUPP_GRID_B=cowplot::plot_grid(LR_IMMUNO_PLT_MIRA_BA2,LR_IMMUNO_PLT_MIRA_BA4+theme(legend.position = "none"),LR_IMMUNO_PLT_MIRA_BA5+theme(legend.position = "none"),nrow=3, align = "hv")
+SUPP_GRID_C = cowplot::plot_grid(TCR_EP_FREQ_PLT_SCATTER+theme(legend.position = "none"), EP_FREQ_PLT_SCATTER+theme(legend.position = "none"), SIZE_TCR_EP_REP_PLT_SCATTER+theme(legend.position = "none"), AGE_PLT_SCATTER+theme(legend.position = "none"), nrow=1, align="hv")
+
+cowplot::plot_grid(A_GRID_ii,SUPP_GRID_A,SUPP_GRID_B, SUPP_GRID_C,ncol=1, rel_heights = c(0.4,1.4,1.2,0.4), align="hv")
+
+```

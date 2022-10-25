@@ -1,0 +1,126 @@
+---
+title: "R Notebook"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+# Nine contact
+
+```{r}
+## AA Ninemers contact position, changes FROM AA X
+NINE_CONTACT_FROM_PLT=readRDS(file="NINE_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)
+NINE_CONTACT_FROM_PLT
+## AA Ninemers contact position, changes TO AA X
+NINE_CONTACT_TO_PLT=readRDS(file="NINE_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)
+NINE_CONTACT_TO_PLT
+## Specific mutation change, ninemers contact postion
+NINE_CONTACT_TO_SPECIFICMUT_PLT=readRDS(file="NINE_CONTACT_TO_SPECIFICMUT_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()
+NINE_CONTACT_TO_SPECIFICMUT_PLT
+```
+
+
+
+# Ten contact
+
+```{r}
+## AA TEN contact position, changes FROM AA X
+TEN_CONTACT_FROM_PLT=readRDS(file="TEN_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)
+TEN_CONTACT_FROM_PLT
+## AA TEN contact position, changes TO AA X
+TEN_CONTACT_TO_PLT=readRDS(file="TEN_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)
+TEN_CONTACT_TO_PLT
+# Ten change to AA AND POS
+TEN_CONTACT_TO_AA_POS_PLT=readRDS(,file="TEN_CONTACT_TO_AA_POS_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()
+TEN_CONTACT_TO_AA_POS_PLT
+
+```
+
+# Epitope escape potential
+
+```{r}
+ESCAPE_POT_PER_PEPTIDE_PLT=readRDS(file="ESCAPE_POT_PER_PEPTIDE_PLT.rds")#+theme_pubr(base_size=16)+rotate_x_text()
+ESCAPE_POT_PER_PEPTIDE_PLT
+```
+
+# Hydrophobicity vs. transition potential
+
+```{r}
+
+HYDROPHOBICITY_ANCHORFREQ_PLT=readRDS(file="HYDROPHOBICITY_ANCHORFREQ_PLT.rds")
+HLA_TRANSITIONPOT_GRPS_PLT=readRDS(file="HLA_TRANSITIONPOT_GRPS_PLT.rds")
+AA_COMP_TRANSITIONPOT_GRPS=readRDS(file="AA_COMP_TRANSITIONPOT_GRPS.rds")
+
+HLA_TRANSITIONPOT_GRPS_PLT
+```
+
+
+```{r,dpi=300, fig.width = 24}
+A_GRID = cowplot::plot_grid(NINE_CONTACT_FROM_PLT, NINE_CONTACT_TO_PLT, nrow=1)
+
+B_GRID = cowplot::plot_grid(NINE_CONTACT_TO_SPECIFICMUT_PLT+theme(legend.position = "none"), nrow=1)
+
+
+C_GRID = cowplot::plot_grid(TEN_CONTACT_FROM_PLT+theme(legend.position = "none"), TEN_CONTACT_TO_PLT+theme(legend.position = "none"), nrow=1)
+
+D_GRID = cowplot::plot_grid(TEN_CONTACT_TO_AA_POS_PLT+theme(legend.position = "none"), nrow=1)
+
+E_GRID = cowplot::plot_grid(ESCAPE_POT_PER_PEPTIDE_PLT, nrow=1)
+
+F_GRID = cowplot::plot_grid(HYDROPHOBICITY_ANCHORFREQ_PLT, NULL, nrow=1, ncol=2, rel_widths = c(1, 2))
+F_GRID_ii = cowplot::plot_grid(AA_COMP_TRANSITIONPOT_GRPS, NULL, nrow=1, ncol=2, rel_widths = c(1, 2))
+
+
+F_GRID = cowplot::plot_grid(HYDROPHOBICITY_ANCHORFREQ_PLT, HLA_TRANSITIONPOT_GRPS_PLT,AA_COMP_TRANSITIONPOT_GRPS,nrow=1, ncol=3)
+```
+```{,dpi=300, fig.width = 24,fig.height=28}
+
+cowplot::plot_grid(A_GRID, B_GRID, C_GRID, D_GRID, E_GRID,F_GRID,F_GRID_ii, nrow = 7, align="v", axis="bt",
+                   rel_heights = c(0.9,0.9,0.9,0.9,1.2,1.2,1))
+
+```
+
+```{r,dpi=300, fig.width = 24,fig.height=26}
+
+cowplot::plot_grid(A_GRID, B_GRID, C_GRID, D_GRID, E_GRID,F_GRID, nrow = 6, align="v", axis="bt",
+                   rel_heights = c(0.9,0.9,0.9,0.9,1.2,1.2))
+
+```
+
+
+## supplementary
+
+```{r,dpi=300, fig.width = 24,fig.height=5}
+
+NINE_CONTACT_SCATTER_PLT=readRDS(file="NINE_CONTACT_SCATTER_PLT.rds")
+
+TEN_CONTACT_SCATTER_PLT=readRDS(file="TEN_CONTACT_SCATTER_PLT.rds")
+
+cowplot::plot_grid(NINE_CONTACT_SCATTER_PLT,TEN_CONTACT_SCATTER_PLT, NULL,NULL, nrow=1,
+                   rel_widths = c(0.25,0.25,0.25,0.25))
+
+```
+
+
+
+
+
+
+
