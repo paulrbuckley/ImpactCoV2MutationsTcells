@@ -3,6 +3,13 @@
   <component name="RMarkdownSettings">
     <option name="renderProfiles">
       <map>
+        <entry key="file://$PROJECT_DIR$/1_Compare_CoV2_Tcell_Targets_Omicron.rmd">
+          <value>
+            <RMarkdownRenderProfile>
+              <option name="outputDirectoryUrl" value="file://$PROJECT_DIR$" />
+            </RMarkdownRenderProfile>
+          </value>
+        </entry>
         <entry key="file://$PROJECT_DIR$/3_Analyse_AgPres_Subvariants.rmd">
           <value>
             <RMarkdownRenderProfile>

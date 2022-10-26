@@ -31,24 +31,16 @@ ClosestMatch2 = function(string, stringVector){
 ```
 
 ## Aims
-Question: - What SARS-CoV2 T cell targets are mutated in Omicron?
-
-- Gather a comprehensive set of immunogenic SArs CoV2 peptides
-- Compare Wuhan and Omicron
-- What SARS-CoV2 T cell targets in mutated regions of Omicron?
--
-
+Question: - What Wuhan Hu-1 SARS-CoV2 T cell targets are mutated in Omicron?
 
 # Gather data
 
-- First, we need to gather a dataset of immunogenic CoV2 peptides
-- Before this, I have combined VIPR + IEDB CoV2 human data as of 14/12/21, the PVE of which will be read in here
-- We also incorporate any MIRA peptides.
-
+- Gather a comprehensive dataset of immunogenic CoV2 peptides
+- As of Dec 2021. By then, most of Wuhan proteome had been scanned for immunogenic CD8+ T cell targets
 ## IEDB + VIPR
 
 ```{r}
-
+# Read pre-processed dataset of SARS2 immunogenic targets
 IEDB_VIPR = readRDS("DATA/SARS_COV2_DATA_DEC21/DEC_2021_Human_Cleaned_SarsCoV2_EpitopeDataset_w_Freq_ONLYPOSITIVE.rds")
 IEDB_VIPR_Full = IEDB_VIPR
 IEDB_VIPR %>% DT::datatable()
@@ -57,12 +49,12 @@ IEDB_VIPR=IEDB_VIPR %>% select(Peptide) %>% mutate(Dataset = "IEDB+VIPR")
 
 ```
 
-## MIRA
+## Read immunognic epitopes from the MIRA dataset
 - Only take those not observed in IEDB+VIPR
--asumd immunogenic as got recognising TCRs
+- Assumed immunogenic as confirmed recognised by TCR
 ```{r}
 
-MIRA_DATA_FULL =fread(file="DATA/MIRA_DATA_FULL.txt")
+MIRA_DATA_FULL = fread(cmd = 'unzip -p MIRA_DATA_FULL.txt.zip')
 MIRA_MISSING=MIRA_DATA_FULL %>% select(Peptide)%>% distinct() %>% mutate(Dataset ="MIRA") %>% filter(! Peptide %in% IEDB_VIPR$Peptide)
 
 MIRA_MISSING %>% head()
@@ -72,11 +64,10 @@ IEDB_VIPR_Full%>% head
 ## Join MIRA + IEDB+VIPR
 
 ```{r}
+# Impute missing columns for MIRA.
 MIRA_MISSING_Full=MIRA_MISSING%>% mutate(HLA_Allele="Unknown", Protein_Name="Unknown", Qualitative_Measure = "Positive", Measurement = "MIRA",Immunogenicity_Binary="Positive",n=NA,Frequency_of_ImmunogenicityBinary=NA)
 IEDB_VIPR_Full=IEDB_VIPR_Full %>% mutate(Dataset = "IEDB+VIPR")
 
-MIRA_MISSING_Full %>% head
-IEDB_VIPR_Full %>% head
 IEDB_VIPR_MIRA_FULL=IEDB_VIPR_Full %>% mutate(Dataset = "IEDB+VIPR") %>% rbind(MIRA_MISSING_Full)
 saveRDS(IEDB_VIPR_MIRA_FULL, file="IEDB_VIPR_MIRA_DATA_FULL_HLA.rds")
 FullDataset = rbind(IEDB_VIPR,MIRA_MISSING)
@@ -86,23 +77,18 @@ saveRDS(FullDataset, "IEDB_VIPR_MIRA_COV2_DATASET.rds")
 # filter only class I by length <15
 FullDataset=FullDataset %>% mutate(Length = nchar(Peptide)) %>% filter(Length < 15)
 
-FullDataset %>% filter(Peptide %in% "FLYIIKLVFL")
-
-
 ```
 
-
-
 # Map epitopes to Wuhan isolate proteome
-
+- Find positions in Wuhan
+- This is to confirm target is from Wuhan
 ```{r}
-
+#list peptides
 full_peptides=FullDataset %>% select(Peptide) %>% unique %>% pull
 
 #pull in CoV2 proteome (Wuhan)
-
 CoV2_stringset=readAAStringSet("DATA/Coronavirus_Sequences/SARS-CoV-2-Wuhan.txt",use.names = TRUE)
-
+# For each SARS2 Wuhan epitope, find and store its location in wuhan proteome
 Ep_Coverage = foreach(i = 1:length(full_peptides),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%do% {
   peptide_i=AAString(full_peptides[i])
 
@@ -115,26 +101,21 @@ Ep_Coverage = foreach(i = 1:length(full_peptides),.combine = rbind, .packages = 
 ```
 
 ```{r}
-
+# Clean the 'Ep coverage' output. Extract the protein name
 Ep_Coverage=Ep_Coverage %>% mutate(Protein = gsub(".*protein=(.+)\\].*","\\1",names))%>% mutate(Protein = gsub("\\].*","",Protein))
 Ep_Coverage=Ep_Coverage %>% dplyr::rename(start_pos="start",end_pos="end")
-
+# Create a column containing each position that each epitope exists in
 Protein_positions=Ep_Coverage %>% group_by(r=row_number()) %>% mutate(allpos = list(start_pos:end_pos)) %>% unnest() %>% group_by(start_pos,end_pos) %>% dplyr::summarise(Positions = paste0(allpos,collapse = ","))%>% ungroup
 WUHAN_COV2_Ep_Coverage=Ep_Coverage %>% inner_join(Protein_positions)
-
+# Map to protein name to protein IDs
 PROT_IDS=names(CoV2_stringset) %>% as.data.table() %>% dplyr::rename(names=".") %>% mutate(RefSeqProteinID = row_number())%>% mutate(Protein = gsub(".*protein=(.+)\\].*","\\1",names))%>% mutate(Protein = gsub("\\].*","",Protein))
 
 WUHAN_COV2_Ep_Coverage=WUHAN_COV2_Ep_Coverage %>% inner_join(PROT_IDS)
 
 ```
 
-## Cov2 peps: how many?
-- by filtering length<15, we are left with 1380 unique peptides
-- mapping to 1798 observations , given orf1a and orf1ab overlap
-
 ```{r}
 WUHAN_COV2_Ep_Coverage%>% select(Peptide) %>% distinct()%>% nrow
-
 WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% nrow
 #saveRDS(WUHAN_COV2_Ep_Coverage,file="WUHAN_COV2_Ep_Coverage.rds")
 
@@ -142,70 +123,65 @@ WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% nrow
 
 
 
-## CoV2 peps mapped to Wuhan, how many and where
-
-- Highest num spike, highest num normalised by protein length is to M,N,S.
-
 ```{r,dpi=300}
-
-WUHAN_COV2_Ep_Coverage %>% select(Peptide) %>% distinct %>% mutate(Length = nchar(Peptide)) %>% group_by(Length) %>% dplyr::summarise(n=n())%>%arrange(desc(n))%>% mutate(Length = as.character(Length))%>%
-  ggbarplot(x="Length",y="n",fill="darkgrey")+ylab("Num. SARS-CoV-2 Peptides\nto Wuhan Isolate")+theme_pubr(base_size = 18)+coord_flip()
-
-WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>% dplyr::summarise(n=n())%>% arrange(desc(n)) %>%
-  ggbarplot(x="Protein",y="n",fill="darkgrey")+ylab("Num. SARS-CoV-2 Peptides\nto Wuhan Isolate")+theme_pubr(base_size = 18)+coord_flip()
 
 CORONAVIRUSSEQS = fread("DATA/Coronavirus_sequences_Full_DT.txt")%>% filter(Virus %in% 'SARS-CoV-2-Wuhan')
 CORONAVIRUSSEQS=CORONAVIRUSSEQS %>% mutate(Length = nchar(`Seq.V1`)) %>% select(!c(Virus, `Seq.V1`))
-
-WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>% dplyr::summarise(n=n())%>% inner_join(CORONAVIRUSSEQS) %>% mutate(FreqPerAA = n/Length)%>% arrange(desc(FreqPerAA))%>%
-   ggbarplot(x="Protein",y="FreqPerAA",fill="darkgrey")+ylab("Freq SARS-CoV-2 Peptides\nper Length Protein to Wuhan isolate")+theme_pubr(base_size = 18)+coord_flip()
-
 
 ```
 
 
 # Map epitopes to the above regions of Omicron
-
 ## Import variant (Omicron) proteome
--Deal w/ proteinIDs which may differ between RefSeq (Wuhan) and Variant (Omicron)
+
 
 ```{r}
-
-Variant_StringSet=readAAStringSet("Omicron_ProteinSeqs/Omicron_SARSCoV2_Seq.fasta",use.names = TRUE)
-Variant_ProteinIDs = names(Variant_StringSet) %>% as.data.table() %>% dplyr::rename(Variantnames=".") %>% mutate(VariantProteinID = row_number())%>% mutate(Protein = gsub(".*protein=(.+)\\].*","\\1",Variantnames))%>% mutate(Protein = gsub("\\].*","",Protein))
+# Deal w/ proteinIDs which may differ between RefSeq (Wuhan) and Variant (Omicron)
+Variant_StringSet=readAAStringSet("DATA/Omicron_ProteinSeqs/Omicron_SARSCoV2_Seq.fasta",use.names = TRUE)
+## Clean the name, give each protein an ID.
+Variant_ProteinIDs = names(Variant_StringSet) %>% as.data.table() %>% dplyr::rename(Variantnames=".") %>%
+  mutate(VariantProteinID = row_number())%>% mutate(Protein = gsub(".*protein=(.+)\\].*","\\1",Variantnames))%>%
+  mutate(Protein = gsub("\\].*","",Protein))
 
 ```
 
 ```{r}
-
+# To map refseq protein name and mutant protein name, link the ids,.
 WUHAN_COV2_Ep_Coverage=WUHAN_COV2_Ep_Coverage %>% inner_join(Variant_ProteinIDs)
 
 ```
 
 
-## local global to entire Variant
-
+## Perform a local global to entire Variant
+- For each epitope of interest, scan the mutant proteome to see if we find epitope or a mutant.
+-
 ```{r}
-
+# DT mapping vartiant protein name and variant protein id.
 VARIANT_PROTEINS = WUHAN_COV2_Ep_Coverage %>% select(Protein, VariantProteinID) %>% distinct()
 
 cores=detectCores()
 cl <- makeCluster(cores[1]-1) #not to overload your computer
 registerDoParallel(cl)
-
+# Nested foreach: for each epitope, run throiugh each variant protein sequence.
 Mutations_Epitopes = foreach(i = 1:nrow(WUHAN_COV2_Ep_Coverage),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings")) %:%
 foreach(ii = 1:length(Variant_StringSet),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%dopar% {
-    peptide_i=WUHAN_COV2_Ep_Coverage$Peptide[i]
+
+  peptide_i=WUHAN_COV2_Ep_Coverage$Peptide[i]
   AlignmentDT = NULL
   ALIGNMENT=pairwiseAlignment(Variant_StringSet[[ii]], peptide_i, type="local-global")
   start_match = start(pattern(ALIGNMENT))
 
-
-  FullAlignmentDT = data.table(Peptide = peptide_i, VariantAlignment =   as.character(aligned(pattern(ALIGNMENT))), score=score(ALIGNMENT), TestedProtein=VARIANT_PROTEINS %>% filter(VariantProteinID == ii) %>% pull(Protein),VariantProteinID=VARIANT_PROTEINS %>% filter(VariantProteinID == ii) %>% pull(VariantProteinID), start_match = start_match )
+  FullAlignmentDT = data.table(Peptide = peptide_i, #original wuhan peptide
+                               VariantAlignment =   as.character(aligned(pattern(ALIGNMENT))), #best Match found in protein
+                               score=score(ALIGNMENT), # alignment score
+                               TestedProtein=VARIANT_PROTEINS %>% filter(VariantProteinID == ii) %>% pull(Protein), # the protein source of highest match
+                               VariantProteinID=VARIANT_PROTEINS %>% filter(VariantProteinID == ii) %>% pull(VariantProteinID), #Variant protein id
+                               start_match = start_match )
 
 }
 
 stopCluster(cl)
+# Take the highest match score for each peptide. This is their match in the proteome.
 Mutations_Epitopes = Mutations_Epitopes%>% distinct() %>% group_by(Peptide) %>% slice_max(score, with_ties = TRUE)%>% ungroup
 
 Mutations_Epitopes=Mutations_Epitopes %>% dplyr::rename(Protein=TestedProtein) %>% select(Peptide, VariantAlignment, VariantProteinID, Protein,start_match)
@@ -214,61 +190,23 @@ Mutations_Epitopes = Mutations_Epitopes %>% distinct() %>% ungroup
 ```
 
 
-## Mutation statistics
-
-
 ```{r}
 
-Mutations_Epitopes %>% select(Peptide) %>% distinct()%>% nrow
-Mutations_Epitopes %>% select(Peptide,Protein) %>% distinct()%>% nrow
-
-
+# Calculate hamming distance between WT and MT
 Mutations_Epitopes=Mutations_Epitopes %>% mutate(Hamming = stringdist::stringdist(Peptide, VariantAlignment, method="hamming"))
 
-Mutations_Epitopes %>% filter(!Hamming == 0)%>% select(Hamming) %>% nrow
-
-Mutations_Epitopes %>% select(Hamming) %>% table
-Mutations_Epitopes %>% select(Hamming) %>% table %>% prop.table()
-
-# Join with data. Joins by proitein so any matches ! to the sdame protein are ignored. highly unlikely to be accurate matches.
+# Join with Ep coverage data. Joins by protein. This therefore excludes any matches between WT and MT that are not to the same protein as they highly unlikely to be accurate matches.
 MutationData_Wuhan_vs_Variant=WUHAN_COV2_Ep_Coverage %>% inner_join(Mutations_Epitopes)
-MutationData_Wuhan_vs_Variant %>% nrow
-MutationData_Wuhan_vs_Variant %>% select(Protein, Hamming) %>% table
-
-MutationData_Wuhan_vs_Variant %>% select(Peptide) %>% distinct()%>% nrow
-MutationData_Wuhan_vs_Variant %>% select(Peptide,Protein) %>% distinct()%>% nrow
-
-
-#Mutations_Epitopes %>% filter(!Hamming == 0) %>% anti_join(WUHAN_COV2_Ep_Coverage) %>% nrow
-
-#Mutations_Epitopes %>% filter(!Hamming == 0) %>% left_join(WUHAN_COV2_Ep_Coverage, by = c("Peptide","Protein")) %>% nrow
-
 
 ```
 
 
 
 ```{r}
-
+# Get rid of epitopes with H0, i.e, identical WT-MT
 MUTATIONDATA=MutationData_Wuhan_vs_Variant %>% filter(! Hamming==0)
 MUTATIONDATA=MUTATIONDATA %>% mutate(ProportionMutated = Hamming/nchar(Peptide))
-#MUTATIONDATA=MUTATIONDATA %>% filter(! ProportionMutated > 0.6)
-calculateMutation <- function(str1, str2,start_pos) {
-  str1vec <- unlist(strsplit(str1, ""))
-  str2vec <- unlist(strsplit(str2, ""))
-  iMut <- (1:length(str1vec))[str1vec != str2vec]
-  MUTPOS = (start_pos-1)+iMut
-  return(paste0(str1vec[iMut], MUTPOS, str2vec[iMut]))
-}
-
-MUTATIONDATA
-
-calculateMutation(MUTATIONDATA$Peptide[1],MUTATIONDATA$VariantAlignment[1],653)
-
-calculateMutation("HVSGTNGTK","HVISGTNGTK",69)
-
-
-
+# Function to calculate the position of the mutation
 calculateMutation_position_V2 <- function(str1, str2,start_pos) {
   require(Biostrings)
   peptide = str1
@@ -298,26 +236,31 @@ calculateMutation_position_V2("SSRGTSPAR","SSKRTSPAR",201)
 
 
 ```{r}
-
+# Calculate mutation positions for each found mutant between wuhan and Omicron BA1
 MUTATIONS = foreach(i = 1:nrow(MUTATIONDATA),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%do% {
 
   mutations = paste0(calculateMutation_position_V2(MUTATIONDATA$Peptide[i],MUTATIONDATA$VariantAlignment[i],MUTATIONDATA$start_pos[i]),collapse = ",")
-  data.table(Peptide = MUTATIONDATA$Peptide[i], VariantAlignment=MUTATIONDATA$VariantAlignment[i], start_pos= MUTATIONDATA$start_pos[i], Protein = MUTATIONDATA$Protein[i], MutationPos = mutations)
+  data.table(Peptide = MUTATIONDATA$Peptide[i],
+             VariantAlignment=MUTATIONDATA$VariantAlignment[i],
+             start_pos= MUTATIONDATA$start_pos[i],
+             Protein = MUTATIONDATA$Protein[i],
+             MutationPos = mutations)
 
 }
 
-#Below line assumes that mutatations in ORF1a and ORF1AB in the same position with same peptuide, are the same mutation thus are joined to be ORF1AB/ORF1a
+#Below line 'assumes' that mutatations in ORF1a AND ORF1AB, in the same position, with same peptide, are the same mutation, thus are joined to be ORF1AB/ORF1a
 MUTATIONS=MUTATIONS %>% group_by(Peptide,VariantAlignment,start_pos,MutationPos) %>% dplyr::summarise(Protein = sort(paste0(Protein,collapse = "/")))
-
+# Read in known SNPs to validate our findings. NAs are retained as they remain observed mutants. Future versions may seek to understand the NAs in more detail
 MUTATION_LIST= fread("OMICRON_SNPS.csv")
 MUTATION_LIST=MUTATION_LIST %>% mutate(MutationPos = parse_number(Mutation))
-MUTATIONS %>% separate_rows_(cols = "MutationPos",sep=",")%>% mutate(MutationPos =as.numeric(MutationPos)) %>% nrow
-MUTATIONS %>% filter(VariantAlignment %in% grep("\\-",VariantAlignment,value = T))
-MUTATIONS=MUTATIONS %>% separate_rows_(cols = "MutationPos",sep=",")%>% mutate(MutationPos =as.numeric(MutationPos)) %>% left_join(MUTATION_LIST)
+# Clean the data
+MUTATIONS=MUTATIONS %>% separate_rows_(cols = "MutationPos",sep=",")%>%
+  mutate(MutationPos =as.numeric(MutationPos)) %>%
+  left_join(MUTATION_LIST)
+
 MUTATIONS=MUTATIONS %>% group_by(Peptide, VariantAlignment,start_pos,Protein)%>%
   dplyr::summarise(MutationPos=paste0(MutationPos,collapse = ","),
                    Mutation = paste0(Mutation, collapse = ","))%>% ungroup
-MUTATIONS %>% nrow
 
 ```
 
@@ -342,25 +285,7 @@ SUMMARISED_WUHAN_PEPLIST %>% select(Protein) %>% unique
 # should be 1380 obs, which there is
 SUMMARISED_WUHAN_PEPLIST %>% nrow
 
-# Simply, what proportion of our original set (the distinct ones) are mutated?
-SUMMARISED_WUHAN_PEPLIST=SUMMARISED_WUHAN_PEPLIST %>% mutate(MUTATED = ifelse(Peptide %in% MUTATIONS$Peptide, "Mutated","Conserved"))
-SUMMARISED_WUHAN_PEPLIST %>% group_by(MUTATED) %>% dplyr::summarise(n=n())%>% ggbarplot(x="MUTATED",y="n",fill="darkgrey",label=T)+ylab("Number of Peptides")
-SUMMARISED_WUHAN_PEPLIST %>% group_by(MUTATED) %>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>% ggbarplot(x="MUTATED",y="Freq",fill="darkgrey",label=T)+ylab("Frequency of total peptides")
-
-# What is the distribution of number of mutation? - below first calculates how many mutations a peptide exhibits (NMUT), then sums the number of times x mutations has been observed (n)
-MUTATIONS%>%select(Peptide,MutationPos) %>% separate_rows_(cols = "MutationPos",sep=",")%>% group_by(Peptide)%>% dplyr::summarise(NMUT = n_distinct(MutationPos))%>%ungroup %>%
-        select(NMUT)%>% group_by(NMUT) %>% dplyr::summarise(n=n())%>%mutate(Freq=n/sum(n))
-
-MUTATIONS%>%select(Peptide,MutationPos) %>% separate_rows_(cols = "MutationPos",sep=",")%>% group_by(Peptide)%>% dplyr::summarise(NMUT = n_distinct(MutationPos))%>%ungroup %>%
-        select(NMUT)%>% group_by(NMUT) %>% dplyr::summarise(n=n())%>%mutate(Freq=n/sum(n)) %>% ggbarplot(x="NMUT",y="n",fill="darkgrey")+ylab("Number of Peptides")+xlab("Number of Mutations")
-
-MUTATIONS %>% select(Peptide,VariantAlignment,Protein,MutationPos) %>% distinct() %>% group_by(Protein)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))
-MUTATIONS %>% select(Peptide,VariantAlignment,Protein,MutationPos) %>% distinct() %>% group_by(Protein)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%arrange(desc(n))%>%
-  ggbarplot(x="Protein",y="n",fill="darkgrey")+ylab("Number of Peptides")+coord_flip()
 ```
-
-
-
 
 
 ```{r}
@@ -369,61 +294,20 @@ MissingPeps=setdiff(FullDataset$Peptide,WUHAN_COV2_Ep_Coverage$Peptide)
 
 ```
 
-
-
-# How many mutations would we expect by random?
-
-- per spike manner first
-- % of spike peps with mutation in Omicron
-
-```{r,cache=TRUE}
-
-NUM_SPIKE_MUT=MUTATIONS %>% filter(Protein == 'surface glycoprotein') %>% nrow
-
-#Griffoni data only
-#NUM_SPIKE_EPS=FullDataset %>% filter(Restriction == 'CD8')%>% filter(Antigen == 'S') %>% nrow
-
-NUM_SPIKE_EPS=WUHAN_COV2_Ep_Coverage %>% filter(Protein == 'surface glycoprotein') %>% nrow
-
-NUM_SPIKE_MUT/NUM_SPIKE_EPS
-
-MUTATIONS %>% filter(Protein == 'surface glycoprotein') %>% mutate(Length = nchar(Peptide))%>% select(Length) %>% table
-WUHAN_COV2_Ep_Coverage %>% filter(Protein == 'surface glycoprotein')  %>% mutate(Length = nchar(Peptide))%>% select(Length)
-
-
-# griffoni
-#FullDataset %>% filter(Antigen == 'S') %>% mutate(Length = nchar(Peptide))%>% select(Length) %>% table
-
-# do 9mers first
-
-PEP_LENGTH = 9
-PROTEIN = 'surface glycoprotein'
-
-NUM_SPIKE_MUT=MUTATIONS %>% filter(Protein == PROTEIN ) %>% mutate(Length = nchar(Peptide)) %>% filter(Length == PEP_LENGTH)%>% nrow
-#NUM_SPIKE_EPS=FullDataset %>% filter(Restriction == 'CD8')%>% filter(Antigen == 'S')%>% filter(Len == PEP_LENGTH) %>% nrow
-
-NUM_SPIKE_EPS=WUHAN_COV2_Ep_Coverage %>% filter(Protein == PROTEIN )%>% mutate(Length = nchar(Peptide)) %>% filter(Length == PEP_LENGTH)%>% nrow
-
-NUM_SPIKE_MUT/NUM_SPIKE_EPS
-
-
-```
-
-
-
-# Analysis 2
+# Compile Antigen Presentation data table
 ## WT wuhan peptides
 
 - DONE! - run stabpan and netmhcpan BA
 - Now, Read in BA/STAB/COMBINED metrics for each peptide for the 50 alleles
 ### netMHCPAN
 - Get BA 1-log50k and combined
+-
 ```{r}
 
-
 # Class I WUHAN
-TEST_DATA_LOCATION = "SARS_COV2_DATA_DEC21/NETMHCPAN_CLASSI"
 
+TEST_DATA_LOCATION = "SARS_COV2_DATA_DEC21/NETMHCPAN_CLASSI"
+# Loop through all files (organised by HLA) and combine.
 data_path <- TEST_DATA_LOCATION
 files <- dir(data_path, pattern = "NetMHC_Results.csv")
 
@@ -432,17 +316,22 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
- Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
-Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
+Netmhcpanres <- unnest(data3)
+# Clean HLA info
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+# Change 1/0 binary binder/nonbinder to english
+Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = "")) # Clean HLA allele.
 
- NETMHC_CLASSI=Netmhcpanres
+NETMHC_CLASSI=Netmhcpanres
+# Determine a binder ourselves, by 2 threshold of BA Rank (instead of EL). Makes analysis of nM consistent with binding status.
 NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER"))
-
+# Calculate the nM from the BA score. BA score is 1-log(50k) of nM. Therefore, nM is 50k^ (1-BA score).
 NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(nM_41 = round(50000^(1-`BA-score`) ,digits=5))
-NETMHC_CLASSI %>% head
- NETMHC_CLASSI= NETMHC_CLASSI %>% group_by(Peptide) %>% dplyr::rename(Predicted_Binding=HLA_Allele)%>% select(!c(NB)) %>% summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
+
+# Summarise data
+NETMHC_CLASSI= NETMHC_CLASSI %>% group_by(Peptide) %>% dplyr::rename(Predicted_Binding=HLA_Allele)%>%
+  select(!c(NB)) %>% summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
           `EL-score`=paste0(`EL-score`,collapse = ","),
           `EL_Rank`=paste0(`EL_Rank`,collapse = ","),
           `BA-score`=paste0(`BA-score`,collapse = ","),
@@ -457,13 +346,13 @@ NETMHC_CLASSI %>% head
 
 ```
 
-### stabpan
+### Stabpan
 - Read in stability scores
 
 ```{r}
 
 TEST_DATA_LOCATION = "SARS_COV2_DATA_DEC21/STABPAN"
-
+# Loop through all files (organised by HLA) and combine.
 data_path <- TEST_DATA_LOCATION
 files <- dir(data_path, pattern = "NetMHC_Results.csv")
 
@@ -472,28 +361,29 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
+Netmhcpanres <- unnest(data3)
 Netmhcpanres %>% head
 
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+# Clean HLA info from file name
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$HLA_Allele,pattern="LENGTH_[0-9]*_",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
 
-Netmhcpanres %>% head
-Netmhcpanres %>% tail
 STABPANRES=Netmhcpanres %>% select(!file)
-STABPANRES %>% head
 
-STABPANRES=STABPANRES %>% group_by(Peptide) %>% dplyr::rename(Predicted_Binding=HLA_Allele)%>% select(!c(NB)) %>% summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
+STABPANRES=STABPANRES %>% group_by(Peptide) %>% dplyr::rename(Predicted_Binding=HLA_Allele)%>%
+  select(!c(NB)) %>%
+  summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
           `Thalf(h)`=paste0(`Thalf(h)`,collapse = ","))
 
 ```
 
-### binding affinity
+### Netmhcpan 4.0 BA
 
+- Not really used but compiled anyway
 ```{r}
 
-
+# Loop through all files (organised by HLA) and combine.
 TEST_DATA_LOCATION = "SARS_COV2_DATA_DEC21/NETMHCPAN_CLASSI_AFFINITY"
 
 data_path <- TEST_DATA_LOCATION
@@ -504,21 +394,19 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
+Netmhcpanres <- unnest(data3)
 Netmhcpanres %>% head
-
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+# Extract HLA allele from file name
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$HLA_Allele,pattern="LENGTH_[0-9]*_",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
- Netmhcpanres=Netmhcpanres %>% mutate(Aff_Binder = ifelse(NB==1,"BINDER","NONBINDER"))
-Netmhcpanres %>% head
+Netmhcpanres=Netmhcpanres %>% mutate(Aff_Binder = ifelse(NB==1,"BINDER","NONBINDER"))
 
 AFFINITY=Netmhcpanres %>% select(Peptide, HLA_Allele, nM,Aff_Binder)
 
 AFFINITY=AFFINITY %>% group_by(Peptide) %>% dplyr::rename(Predicted_Binding=HLA_Allele) %>% summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
           nM=paste0(nM,collapse = ","), Aff_Binder=paste0(Aff_Binder,collapse = ","))
 
-AFFINITY %>% head
 ```
 
 ### combine the binding scores
@@ -536,7 +424,7 @@ WUHAN_PEPTIDES_BINDING_SCORES %>% head()
 
 ```
 
-### compute fraction of hydrophobicity
+## compute fraction of hydrophobicity
 
 
 ```{r}
@@ -545,36 +433,30 @@ library(stringi)
 
 HYDROPHOBIC_RESIDUES = c("V","I","L","F","M","W","C") # from BARNES 2003 (SEE WELLS PAPER)
 
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES%>% mutate(Length = nchar(Peptide)) %>% mutate(HydrophobicCount =  stri_count_regex(WUHAN_PEPTIDES_BINDING_SCORES$Peptide, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>% mutate(HydroFraction = HydrophobicCount/Length)
-
-```
-### Check ive got all scores for all peptides
-
-
-```{r}
-FullDataset%>% select(Peptide,Length) %>% distinct() %>% filter(Length<15)%>% nrow
-WUHAN_PEPTIDES_BINDING_SCORES %>% nrow
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES%>%
+  mutate(Length = nchar(Peptide)) %>%
+  mutate(HydrophobicCount =  stri_count_regex(WUHAN_PEPTIDES_BINDING_SCORES$Peptide, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
+  mutate(HydroFraction = HydrophobicCount/Length)
 
 ```
 
-
-
-
+## Compile data
 
 ```{r}
 
-WUHAN_PEPTIDES_BINDING_SCORES %>% head()
 WUHAN_PEPTIDES_BINDING_SCORES = WUHAN_PEPTIDES_BINDING_SCORES %>% filter(!Peptide %in% MissingPeps)
 WUHAN_PEPTIDES_BINDING_SCORES %>% nrow
 saveRDS(WUHAN_PEPTIDES_BINDING_SCORES, "ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
 ```
 
-## MT peptides
 
+## Antigen presentation of MT peptides
+- Repeat the above but for MT
 
 - DONE! - run stabpan and netmhcpan BA
 - Now, Read in BA/STAB/COMBINED metrics for each peptide for the 50 alleles
-### netMHCPAN
+
+### netMHCPAN 4.1
 - Get BA 1-log50k and combined
 ```{r}
 
@@ -590,12 +472,12 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
- Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
+Netmhcpanres <- unnest(data3)
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
 
- NETMHC_CLASSI=Netmhcpanres
+NETMHC_CLASSI=Netmhcpanres
 NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(MT_nM_41 = round(50000^(1-`BA-score`) ,digits=5))
 NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER"))
 
@@ -640,10 +522,10 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
+Netmhcpanres <- unnest(data3)
 Netmhcpanres %>% head
 
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$HLA_Allele,pattern="LENGTH_[0-9]*_",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
 
@@ -658,7 +540,8 @@ STABPANRES=STABPANRES %>% dplyr::rename(VariantAlignment = Peptide, `MT_Thalf(h)
 ```
 
 
-### binding affinity
+### binding affinity from netMHCpan 4.0
+- not used but was still compiled
 
 ```{r}
 
@@ -673,30 +556,22 @@ data3 <- data_frame(file = files) %>%
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
+Netmhcpanres <- unnest(data3)
 Netmhcpanres %>% head
 
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$HLA_Allele,pattern="LENGTH_[0-9]*_",replacement = ""))
 Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
- Netmhcpanres=Netmhcpanres %>% mutate(MT_Aff_Binder = ifelse(NB==1,"BINDER","NONBINDER"))
-
-Netmhcpanres %>% head
+Netmhcpanres=Netmhcpanres %>% mutate(MT_Aff_Binder = ifelse(NB==1,"BINDER","NONBINDER"))
 
 AFFINITY=Netmhcpanres %>% select(Peptide, HLA_Allele, nM,MT_Aff_Binder)
 
 AFFINITY=AFFINITY %>% dplyr::rename(VariantAlignment = Peptide,MT_nM=nM)%>% group_by(VariantAlignment) %>% dplyr::rename(Predicted_Binding=HLA_Allele) %>% summarise(Predicted_Binding = paste0(unique(Predicted_Binding),collapse = ","),
           MT_nM=paste0(MT_nM,collapse = ","), MT_Aff_Binder=paste0(MT_Aff_Binder,collapse = ","))
-AFFINITY %>% head
+
 ```
 
 ```{r}
-length(unique(MUTATIONS$VariantAlignment))
-STABPANRES %>% nrow
-NETMHC_CLASSI%>% nrow
-AFFINITY %>% nrow
-STABPANRES %>% inner_join(NETMHC_CLASSI) %>% inner_join(AFFINITY)%>% nrow
-
 OMICRON_MUTATIONS_BINDING_SCORES = STABPANRES %>% inner_join(NETMHC_CLASSI) %>% inner_join(AFFINITY)
 OMICRON_MUTATIONS_BINDING_SCORES %>% nrow
 #OMICRON_MUTATIONS_BINDING_SCORES = OMICRON_MUTATIONS_BINDING_SCORES %>% filter(!Peptide %in% MissingPeps)
@@ -705,6 +580,7 @@ OMICRON_MUTATIONS_BINDING_SCORES %>% nrow
 saveRDS(OMICRON_MUTATIONS_BINDING_SCORES, "OMICRON_PEPTIDES_BINDING_SCORES_V2.rds")
 
 ```
+
 # 26 peptide discrepency with mapped to wuhan
 - I have a 26 peptide discrepency between those in 'FullDataset' curated from IEDB+VIPR+MIRA, and those mapped to wuhan.
 - Whats going on here?
