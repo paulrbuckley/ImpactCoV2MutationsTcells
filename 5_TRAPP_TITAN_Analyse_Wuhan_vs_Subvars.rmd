@@ -22,170 +22,142 @@ ClosestMatch2 = function(string, stringVector){
 }
 ```
 
-# Read in Wuhan
+
+# Read in SUBVAR datasets
 
 ```{r}
-MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
-WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% filter(Peptide %in% MUTATIONS$Peptide)
-
-WUHAN_PEPTIDES_BINDING_SCORES %>% head
-
-```
-
-
-```{r}
-
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% select(Peptide, Predicted_Binding, BA_Rank, Binder)%>% separate_rows_(cols = c("Predicted_Binding","BA_Rank","Binder"),sep=",")%>%
-        mutate(Dataset = "WuhanTest")
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% dplyr::rename(AASeq1=Peptide)%>% select(!Dataset)
-```
-
-# Read in SUBVAR dataset
-
-```{r}
+# Reads in .rds file generated in 3_*.rmd.
+# This is a DT containing for eah assesed variant, its mutated epitopes and WT-MT antigen presentation metrics.
 
 FULL_MUTATIONS_DT = readRDS("SUBVARIANTS_FULL_MUTATIONS_DT.rds")
-FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Predicted_Binding, BA_Rank,`BA-score`, Binder, MT_Binder, MT_BA_Rank,`MT_BA-score`,Variant)%>%
-        separate_rows_(cols = c("Predicted_Binding", "BA_Rank","BA-score", "Binder", "MT_Binder", "MT_BA_Rank","MT_BA-score"),sep=",") %>%
-        mutate(BA_Rank = as.numeric(BA_Rank)) %>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))%>%mutate(`BA-score` = as.numeric(`BA-score`)) %>% mutate(`MT_BA-score` = as.numeric(`MT_BA-score`))
-#define Min-Max normalization function
-min_max_norm <- function(x) {
-    (- 1 * ((x - min(x)) / (max(x) - min(x))))+1
-  }
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>%  # Clean up the dataset for analysis
+  select(Peptide, VariantAlignment, Predicted_Binding, BA_Rank,`BA-score`, Binder, MT_Binder, MT_BA_Rank,`MT_BA-score`,Variant)%>%
+  separate_rows_(cols = c("Predicted_Binding", "BA_Rank","BA-score", "Binder", "MT_Binder", "MT_BA_Rank","MT_BA-score"),sep=",") %>%
+  mutate(BA_Rank = as.numeric(BA_Rank)) %>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))%>%mutate(`BA-score` = as.numeric(`BA-score`)) %>%
+  mutate(`MT_BA-score` = as.numeric(`MT_BA-score`))
 
+# Incorporate delta
+DELTA_FULL_MUTATIONS_DT = readRDS("DELTA_FULL_MUTATIONS_DT.rds")
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>%  # Clean up the dataset for analysis
+  select(Peptide, VariantAlignment, Predicted_Binding, BA_Rank,`BA-score`, Binder, MT_Binder, MT_BA_Rank,`MT_BA-score`,Variant)%>%
+  separate_rows_(cols = c("Predicted_Binding", "BA_Rank","BA-score", "Binder", "MT_Binder", "MT_BA_Rank","MT_BA-score"),sep=",") %>%
+  mutate(BA_Rank = as.numeric(BA_Rank)) %>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))%>%mutate(`BA-score` = as.numeric(`BA-score`)) %>%
+  mutate(`MT_BA-score` = as.numeric(`MT_BA-score`))
+
+# Define negative logistic function. This transforms a 'BA Rank' score into a 0-1 probability based on binding rank threshold of 2.0 for cuttoff.
 #negative logistic function
 neg_logit_function = function(x) {
   1/(1+exp(1.5*(x-2)))
 }
+# Generate WT and MT MHCScore
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(MHCScore = neg_logit_function(BA_Rank))%>% mutate(MT_MHCScore = neg_logit_function(MT_BA_Rank))
-#FULL_MUTATIONS_DT %>% mutate(MHCScore = min_max_norm(BA_Rank))%>% mutate(MT_MHCScore = min_max_norm(MT_BA_Rank))
-
+# Exclude WT&MT nonbinders - irrelevant for our analysis.
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT%>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))
 FULL_MUTATIONS_DT %>% head()
-
+# Do delta separately
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT%>% mutate(MHCScore = neg_logit_function(BA_Rank))%>% mutate(MT_MHCScore = neg_logit_function(MT_BA_Rank))
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT%>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))
+DELTA_FULL_MUTATIONS_DT %>% head()
 ```
 
-
+# Locate prediction scores from TRAP for each epitope
 
 ```{r}
-FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt")%>% distinct()
+# Read in full dataset of TRAP scores.
+FullDataset=fread(cmd = "unzip -p TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt.zip")%>% distinct()
+# Get rid of mutagenesis scores, these are used later.
 FullDataset=FullDataset %>% filter(! Dataset %in% 'Mutagenesis')
-INPUT_DATA_TRAPP=fread("MUTAGENESIS_SUBSET_OMI_WUHAN_HLA_RUN_CHL_DNN_V4_INC_SUBVAR_WTNB_MTBINDER_ALLCOV2_MUTAGENESIS.txt")%>% distinct()%>%
-  mutate(BA_Rank = as.numeric(BA_Rank))%>% mutate(nlog2Rank = - log2(BA_Rank))
+# Read in dataset that was used to generate TRAP prediction. These data re then linked with 'FullDataset', to find the MHC for each particular prediction score.
+INPUT_DATA_TRAPP=fread("MUTAGENESIS_SUBSET_OMI_WUHAN_HLA_RUN_CHL_DNN_V4_INC_SUBVAR_WTNB_MTBINDER_ALLCOV2_MUTAGENESIS.txt")%>%
+  distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>% mutate(nlog2Rank = - log2(BA_Rank))
+# Round nlog2Rank [used as input to TRAP. Here I use to join with prediction score for correct MHC/
 INPUT_DATA_TRAPP=INPUT_DATA_TRAPP %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
 FullDataset=FullDataset%>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
 FullDataset=FullDataset %>% inner_join(INPUT_DATA_TRAPP)
 
 FullDataset %>% select(Dataset)%>% table
+# Cleaning and stats
 FullDataset=FullDataset%>%dplyr::rename(Prediction=prediction)
 FullDataset=FullDataset %>% select(Peptide, Dataset, Predicted_Binding, Prediction)
 FullDataset %>% head
 FullDataset=FullDataset %>% select(! Dataset) %>% distinct()
-FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
 
 ```
 
-
+# Delta
+- Read in TRAP predictions for delta
+- Deal with delta separately
 ```{r}
-FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Length = nchar(Peptide)) %>% filter(Length %in% c(9,10))
+delta_FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_delta_test_prediction.txt")%>% select(Peptide, Predicted_Binding, prediction)%>%
+        dplyr::rename(Prediction=prediction)
+```
 
-# Only NB-->B. Makes sense as i'm joining WT.
-FULL_MUTATIONS_DT %>% anti_join(FullDataset)%>% mutate(GROUP = paste0(Binder, "_",MT_Binder))%>% select(GROUP) %>% table
-# Simply impute
+# Generate immunogenicity prediction scores for all mutated epitopes
+- Join FullMutationsDT with our scores
+- Then where necessary, impute a immunogenicity score
+- Below is for BA2, 4, 5
+```{r}
+# Round all numerics. Avoids duplicate observations
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Length = nchar(Peptide)) %>% filter(Length %in% c(9,10))
 
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% left_join(FullDataset)
 
+# Simply impute
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% left_join(FullDataset %>% dplyr::rename(VariantAlignment = Peptide, OmicronPrediction=Prediction))
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
-
+# If a TRAP score does not exist, i.e is NA, then impute 0.01.
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% dplyr::rename(TRAPP_Prediction=Prediction, TRAPP_Omicron = OmicronPrediction) %>% replace_na(list(TRAPP_Prediction = 0.01, TRAPP_Omicron=0.01))
-
+# Round again
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
-
-#FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = TRAPP_Prediction * `BA-score`)%>% mutate(OmicronPrediction = TRAPP_Omicron* `MT_BA-score`)
+# Calculate immunogenicity score: TRAP * MHC
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = TRAPP_Prediction * MHCScore)%>% mutate(OmicronPrediction = TRAPP_Omicron* MT_MHCScore)
-
-#FULL_MUTATIONS_DT %>% mutate(MHCScore = min_max_norm(BA_Rank))%>% mutate(MT_MHCScore = min_max_norm(MT_BA_Rank))
-
-#FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% filter(!(Binder == "BINDER" & MT_Binder == "BINDER" & Prediction < 0.75 & OmicronPrediction < 0.75))
-#colnms = colnames(FULL_MUTATIONS_DT)
-
-#NA_SET = FULL_MUTATIONS_DT %>%
- # filter_at(vars(all_of(colnms)), any_vars(is.na(.)))
-
-#B_NB=NA_SET %>% filter((Binder == "BINDER" & MT_Binder == "NONBINDER") ) %>% select(VariantAlignment,Predicted_Binding,MT_BA_Rank) %>% dplyr::rename(Peptide=VariantAlignment,BA_Rank=MT_BA_Rank)
-
-#NB_B=NA_SET %>% filter((Binder == "NONBINDER" & MT_Binder == "BINDER") ) %>% select(Peptide,Predicted_Binding,BA_Rank)
-
-#B_NB %>% rbind(NB_B)%>% readr::write_csv(file="NONBINDERS_FOR_TRAPP_BA1.csv")
-
-
-#FULL_MUTATIONS_DT = FULL_MUTATIONS_DT%>% anti_join(NA_SET)
-
-#NONBINDERS_TRAPP_SCORES=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_nonbinder_sars2_mut_test_prediction_withlabel.txt") %>% filter(Dataset == "BA1")
-#NONBINDERS_TRAPP_SCORES=NONBINDERS_TRAPP_SCORES %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
-#B_NB=B_NB%>% distinct()%>%
-#  mutate(BA_Rank = as.numeric(BA_Rank))%>% mutate(nlog2Rank = - log2(BA_Rank)) %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
-
-#B_NB %>% left_join(NONBINDERS_TRAPP_SCORES)
-
-# Omicron: as a nonbinder, it is BELOW the immunogenic threshold, proportional to the MUTANT rank score
-# Wuhan : as a non binder, it is BELOW the immunogenic threshold, proportional to the WT Rank score.
-#NA_SET_BINDER_NONBINDER = NA_SET %>% filter((Binder == "BINDER" & MT_Binder == "NONBINDER") ) %>% mutate(OmicronPrediction = 0.75 - log(MT_BA_Rank,50000))
-#NA_SET_NONBINDER_BINDER = NA_SET %>% filter((Binder == "NONBINDER" & MT_Binder == "BINDER") )%>% mutate(Prediction= 0.75 - log(BA_Rank,50000))
+# Round again
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
-
-
-FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction<0.00001, 0.00001))%>%
-  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction<0.00001, 0.00001))
-#FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% rbind(NA_SET_BINDER_NONBINDER)%>% rbind(NA_SET_NONBINDER_BINDER)
+# Now, to avoid strange data, for prediction scores lower than 1e-05, replace with 1e-05. This is to avoid some scores with e.g., 1e-16.
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction<0.01, 0.01))%>%
+  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction<0.01, 0.01))
+# Exclude any observations where immunogenicity score of WT and MT are both <0.5 - suggests nonimmungoenic binders.. but we're only interested in case where one is predicted immunogenic.
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% filter(!(Prediction < 0.5 & OmicronPrediction < 0.5))
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = round(Prediction, digits=4))%>% mutate(OmicronPrediction = round(OmicronPrediction, digits=4))%>% distinct()
-
-FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction==0.0, 0.00001))%>%
-  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction==0.0, 0.00001))
+# Anything rounded to 0.0, replace with 1e-05. To avoid issues with plotting
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction==0.0, 0.01))%>%
+  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction==0.0, 0.01))
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
-
-FULL_MUTATIONS_DT %>% filter(Peptide %in% grep("PRRAR", Peptide, value=T))%>% DT::datatable()
-
-#FULL_MUTATIONS_DT %>% dplyr::rename("Variant Peptide"=VariantAlignment, "HLA Allele"=Predicted_Binding,WuhanPrediction=Prediction,#TRAPP_Wuhan=TRAPP_Prediction) %>%
-  #  select(! c(`BA-score`,`MT_BA-score`))%>%
-   # readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy #Group/Effect_Mutation_Tcells/V9/WORKING_VERSION/Supplementary Tables/Table2_Subvar_Tcellimmuno.csv")
-
+FULL_MUTATIONS_DT %>% dplyr::rename("Variant Peptide"=VariantAlignment, "HLA Allele"=Predicted_Binding,WuhanPrediction=Prediction,TRAPP_Wuhan=TRAPP_Prediction) %>%
+    select(! c(`BA-score`,`MT_BA-score`))%>%
+    readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/SUBMITTED/R_R/Supplementary Datafile/Table3_Subvar_Tcellimmuno.csv")
 
 ```
+
+## Plot Wuhan -->  BA2/4/5 changes in immunogenicity
 
 ```{r,dpi=300, fig.width = 12}
 my_comparisons = list(c("Wuhan","Omicron"))
-
-VIOLIN_PLT=FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
+# For each variant, violin plot comparing immunogenicity score of WT vs. MT. (Wuhan vs Omicron)
+VIOLIN_PLT=FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%
+        dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
         melt%>% dplyr::rename(Dataset=variable, Prediction=value)%>%
-  ggviolin(x="Dataset",y="Prediction",add="boxplot",trim=TRUE)+stat_compare_means(comparisons = my_comparisons,label="p.signif")+geom_hline(yintercept = 0.75, linetype="dashed")+facet_grid(~Variant)+ylim(0,1)
+  ggviolin(x="Dataset",y="Prediction",add="boxplot",trim=TRUE)+
+        stat_compare_means(comparisons = my_comparisons,label="p.signif")+
+        geom_hline(yintercept = 0.75, linetype="dashed")+facet_grid(~Variant)+ylim(0,1)
 VIOLIN_PLT
 
-saveRDS(VIOLIN_PLT,file="SUBVAR_WUHAN_OMI_VIOLIN_PLT.rds")
-
-FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
-        melt%>% dplyr::rename(Dataset=variable, Prediction=value)%>%
-  ggboxplot(x="Dataset",y="Prediction")+stat_compare_means(comparisons = my_comparisons)+geom_hline(yintercept = 0.75, linetype="dashed")+facet_grid(~Variant)
-
-
-FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
-        melt%>% dplyr::rename(Dataset=variable, Prediction=value) %>%
-  ggdensity(x="Prediction",y="..density..",fill="Dataset")+geom_vline(xintercept = 0.75, linetype="dashed")+facet_grid(~Variant)
-
-ECDF_PLT=FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
+#saveRDS(VIOLIN_PLT,file="SUBVAR_WUHAN_OMI_VIOLIN_PLT.rds")
+# For each variant, EDDF comparing immunogenicity score of WT vs. MT. (Wuhan vs Omicron)
+ECDF_PLT=FULL_MUTATIONS_DT  %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%
         melt%>% dplyr::rename(Dataset=variable, Prediction=value) %>%
         ggplot(aes(x=Prediction, color=Dataset))+stat_ecdf(size=1)+theme_pubr(base_size = 16)+grids()+geom_vline(xintercept = 0.75,linetype="dashed")+facet_grid(~Variant)
 ECDF_PLT
-saveRDS(ECDF_PLT,file="SUBVAR_ECDF_PLT_IMMUNO.rds")
+#saveRDS(ECDF_PLT,file="SUBVAR_ECDF_PLT_IMMUNO.rds")
 
 ```
 
 
+# Analyse HLA associations given changes in immunogenicity
+
 ```{r,dpi=300,fig.height=11,fig.width=10}
+#Link the data with HLA supertypes
 AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>% mutate(Allele = gsub("\\*","",Allele))%>% mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
 
 DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT
@@ -197,92 +169,70 @@ HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predict
 
 ```
 
-
-
-
-```{r,dpi=300, fig.width  = 11, fig.height = 10}
-
-VARIANT = "BA2"
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>% dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction) %>%
-        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Immunogenicity Score")+ggtitle(VARIANT)
-
-VARIANT = "BA4"
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT) %>% dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction) %>%
-        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Immunogenicity Score")+ggtitle(VARIANT)
-
-VARIANT = "BA5"
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Variant == VARIANT)%>% dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)  %>%
-        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Immunogenicity Score")+ggtitle(VARIANT)
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% select(!Variant)%>% distinct()%>% dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction) %>%
-        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Immunogenicity Score")+ggtitle("ALL")
-
-
-SUBVAR_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>% filter(Supertype %in% c("A02","A03","B07","C01"))%>%
-        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(Variant~Supertype)+theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Immunogenicity Score")
+```{r,dpi=300, fig.width  = 11, fig.height = 11}
+# For a set of supertypes, plot paired responses between
+SUBVAR_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%
+        dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>% filter(Supertype %in% c("A02","A03","B07","C01"))%>%
+        mutate(LRabs=abs(log(Omicron/Wuhan)))%>%mutate(label = ifelse(LRabs>4.0, Peptide, ""))%>%
+        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(Variant~Supertype)+
+        theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+
+        rotate_x_text(angle=45)+ylab("Immunogenicity Score")
 
 SUBVAR_SUPERTYPE_BOXPLT
-saveRDS(SUBVAR_SUPERTYPE_BOXPLT,file="SUBVAR_SUPERTYPE_BOXPLT_TCELL.rds")
+#saveRDS(SUBVAR_SUPERTYPE_BOXPLT,file="SUBVAR_SUPERTYPE_BOXPLT_TCELL.rds")
+SUBVAR_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%
+        dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>% filter(Supertype %in% c("A02","A03","B07","C01"))%>%
+        mutate(LRabs=abs(log(Omicron/Wuhan)))%>%mutate(label = ifelse(LRabs>4.0, Peptide, ""))%>%mutate(label = substr(label, 1, 4))%>%
+        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(Variant~Supertype)+
+        theme_pubr(base_size = 16)+stat_compare_means(label = "p.signif",label.x.npc = "center")+
+        rotate_x_text(angle=45)+ylab("Immunogenicity Score")+ggrepel::geom_text_repel(max.overlaps = 6,aes(label=label))
 
-
+SUBVAR_SUPERTYPE_BOXPLT
 
 ```
 
 
 
-
 ```{r,dpi=300, fig.width = 10, fig.height = 10}
-
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
 BA1_OMICRON_MUT_LIST = MUTATIONS%>% separate_rows(Mutation, sep=",") %>% pull(Mutation) %>% unique
 
 SUBVAR_MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS_SUBVAR.rds")
-VARIANT = "BA2"
-FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>%filter(Variant==VARIANT) %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>%select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction)%>%melt %>%
- ggviolin(x="variable",y="value",fill="variable",add=c("boxplot"))+facet_wrap(~Mutation,scales="free")+stat_compare_means(label="p.signif", label.x.npc = "center")+ggtitle(VARIANT)
-
-VARIANT = "BA4"
-FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>%filter(Variant==VARIANT) %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>%select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction)%>%melt %>%
- ggviolin(x="variable",y="value",fill="variable",add=c("boxplot"))+facet_wrap(~Mutation,scales="free")+stat_compare_means(label="p.signif", label.x.npc = "center")+ggtitle(VARIANT)
-
-VARIANT = "BA5"
-FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>%filter(Variant==VARIANT) %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>%select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction)%>%melt %>%
- ggviolin(x="variable",y="value",fill="variable",add=c("boxplot"))+facet_wrap(~Mutation,scales="free")+stat_compare_means(label="p.signif", label.x.npc = "center")+ggtitle(VARIANT)
 
 ```
 
-```{r,dpi=300, fig.width = 10, fig.height = 10}
+# Look for associations with immunogenicity changes by mutation
 
-VARIANT_MUT_OVERLAP=FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST) %>% select(Mutation, Variant) %>% distinct()%>%
-        group_by(Mutation) %>% dplyr::summarise(Variant = sort(unique(paste0(Variant, collapse = ","))))
-
-FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>%select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction,Variant)%>%
-        melt %>%select(! Variant)%>% distinct()%>%inner_join(VARIANT_MUT_OVERLAP)%>%
- ggviolin(x="variable",y="value",fill="variable",add=c("boxplot"))+facet_wrap(~Mutation+Variant,scales="free")+stat_compare_means(label="p.signif", label.x.npc = "center")
-
-
-
-```
 ```{r,dpi=300, fig.height = 15, fig.width = 24}
-
-MUTS_SIG_FOR_PLT = FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>% dplyr::rename(Wuhan=Prediction,Omicron=OmicronPrediction) %>% pivot_longer(cols = c("Wuhan","Omicron"))%>%dplyr::rename(Dataset=name, Prediction=value)%>% separate_rows(Mutation, sep=",")%>%
-        group_by(Mutation)%>%rstatix::wilcox_test(Prediction ~ Dataset, paired=TRUE) %>% filter(p<0.05) %>% pull(Mutation)
-
-SUBVAR_MUTATIONS_COMPARE_PLT=FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>% filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>%select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction,Variant)%>%
+# Identify mutations with sig differences Wuhan vs Omicron subvariants
+MUTS_SIG_FOR_PLT = FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>%
+        filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>% dplyr::rename(Wuhan=Prediction,Omicron=OmicronPrediction) %>%
+        pivot_longer(cols = c("Wuhan","Omicron"))%>%dplyr::rename(Dataset=name, Prediction=value)%>%
+        separate_rows(Mutation, sep=",")%>%
+        group_by(Mutation)%>%
+        rstatix::wilcox_test(Prediction ~ Dataset, paired=TRUE) %>% filter(p<0.05) %>% pull(Mutation)
+# Plot these changes
+SUBVAR_MUTATIONS_COMPARE_PLT=FULL_MUTATIONS_DT %>% inner_join(SUBVAR_MUTATIONS)%>% separate_rows(Mutation, sep=",") %>%
+        filter(! Mutation %in% BA1_OMICRON_MUT_LIST)%>% # only those distinct to a subvariant
+        select(Peptide, VariantAlignment, Predicted_Binding, Mutation, Prediction, OmicronPrediction,Variant)%>%
         dplyr::rename(Wuhan=Prediction, Omicron=OmicronPrediction)%>%melt %>%dplyr::rename(Dataset = variable)%>%
         filter(Mutation %in% MUTS_SIG_FOR_PLT)%>%filter(! Mutation == "NA")%>%
- ggviolin(x="Dataset",y="value",fill="Dataset",add=c("jitter","boxplot"), trim=TRUE)+theme_pubr(base_size = 16)+facet_wrap(~Mutation+Variant,scales="free",ncol=6)+stat_compare_means(label="p.signif", label.x.npc = "center")+ylab("Immunogenicity Score")
+ ggviolin(x="Dataset",y="value",fill="Dataset",add=c("jitter","boxplot"), trim=TRUE)+
+        theme_pubr(base_size = 16)+facet_wrap(~Mutation+Variant,scales="free",ncol=6)+
+        stat_compare_means(label="p.signif", label.x.npc = "center")+ylab("Immunogenicity Score")
 SUBVAR_MUTATIONS_COMPARE_PLT
 
-saveRDS(SUBVAR_MUTATIONS_COMPARE_PLT, file="SUBVAR_MUTATIONS_COMPARE_PLT.rds")
+#saveRDS(SUBVAR_MUTATIONS_COMPARE_PLT, file="SUBVAR_MUTATIONS_COMPARE_PLT.rds")
 ```
 
-# Compute LR
+# Compute RI score
+- Below is called "LR Immuno"
 
 ```{r}
 
+# Round up for log ratios. Anything < 0.01, set to 0.01.
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction<0.01, 0.01))%>%
   mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction<0.01, 0.01))
-#FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% rbind(NA_SET_BINDER_NONBINDER)%>% rbind(NA_SET_NONBINDER_BINDER)
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% filter(!(Prediction < 0.5 & OmicronPrediction < 0.5))
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = round(Prediction, digits=4))%>% mutate(OmicronPrediction = round(OmicronPrediction, digits=4))%>% distinct()
 FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction==0.0, 0.01))%>%
@@ -292,42 +242,43 @@ FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)%>% disti
 
 FITNESS_DATA=FULL_MUTATIONS_DT %>% dplyr::rename(WuhanPrediction=Prediction)
 FITNESS_DATA=FITNESS_DATA%>%
-       mutate(LR_Immuno = log(OmicronPrediction / WuhanPrediction))
+       mutate(LR_Immuno = log(OmicronPrediction / WuhanPrediction)) # This is RI Score
 FITNESS_DATA=FITNESS_DATA%>% mutate(LR_Immuno = round(LR_Immuno,digits = 4))%>% distinct()
 
-saveRDS(FITNESS_DATA,file="LR_IMMUNO_FITNESS_DATA_TRAPP_SUBVARS.rds")
+#saveRDS(FITNESS_DATA,file="LR_IMMUNO_FITNESS_DATA_TRAPP_SUBVARS.rds")
 FITNESS_DATA %>% DT::datatable()
 
 
 ```
 
-
+## Visualise RI score (LRImmuno)
 
 ```{r,dpi=300, fig.width = 24,fig.height=6}
+
 SUPERTYPE=fread("HLA_ABC_SUPERTYPES_CLEANED.csv")%>% dplyr::rename(Predicted_Binding=HLA_Allele)
 NEW_COL=RColorBrewer::brewer.pal(3, "Set1")
 NEW_COL = c("#377EB8","#E41A1C","#4DAF4A")
-#SEPARATED_SUBVAR_MUTS=SUBVAR_MUTATIONS#%>% separate_rows(Mutation, sep=",")
+
 VARIANT = "BA2"
 
 LRIMMUNO_PLT= FITNESS_DATA%>% filter(Variant == VARIANT)%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(SUPERTYPE)%>% left_join(SUBVAR_MUTATIONS)%>%
         filter(Protein == 'surface glycoprotein')%>%ungroup()%>% arrange(desc(LR_Immuno))%>%drop_na()%>% distinct()%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%
         ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=LR_Immuno, fill=Binder_Grp))+geom_bar(stat="identity")+theme_pubr()+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top")+grids()+xlab("Peptide-MHC")+ scale_fill_manual(values = NEW_COL)+ scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+ggtitle(VARIANT)
 LRIMMUNO_PLT
-saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
+#saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
 VARIANT = "BA4"
 LRIMMUNO_PLT= FITNESS_DATA%>% filter(Variant == VARIANT)%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(SUPERTYPE)%>% left_join(SUBVAR_MUTATIONS)%>%
         filter(Protein == 'surface glycoprotein')%>%ungroup()%>% arrange(desc(LR_Immuno))%>%drop_na()%>% distinct()%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%
         ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=LR_Immuno, fill=Binder_Grp))+geom_bar(stat="identity")+theme_pubr()+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top")+grids()+xlab("Peptide-MHC")+ scale_fill_manual(values = NEW_COL)+ scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+ggtitle(VARIANT)#+scale_x_discrete(guide = guide_axis(n.dodge=2))
 LRIMMUNO_PLT
-saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
+#saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
 
 VARIANT = "BA5"
 LRIMMUNO_PLT= FITNESS_DATA%>% filter(Variant == VARIANT)%>% mutate(pMHC=paste0(Peptide,"_",gsub("HLA-","",Predicted_Binding)))%>%arrange(desc(LR_Immuno))%>% left_join(SUPERTYPE)%>% left_join(SUBVAR_MUTATIONS)%>%
         filter(Protein == 'surface glycoprotein')%>%ungroup()%>% arrange(desc(LR_Immuno))%>%drop_na()%>% distinct()%>%mutate(Binder_Grp = paste0("WT_",Binder," MT_",MT_Binder))%>%
         ggplot(aes(x=reorder(pMHC, -LR_Immuno), y=LR_Immuno, fill=Binder_Grp))+geom_bar(stat="identity")+theme_pubr()+font("x.text",size=10)+rotate_x_text(angle=90)+theme(legend.position = "top")+grids()+xlab("Peptide-MHC")+ scale_fill_manual(values = NEW_COL)+ scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+ggtitle(VARIANT)
 LRIMMUNO_PLT
-saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
+#saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
 
 ```
 
@@ -337,11 +288,7 @@ saveRDS(LRIMMUNO_PLT, file = paste0(VARIANT,"_LRImmuno_SUBVAR_PLT.rds"))
 - Therefore, instead, we must develop a score for each peptide, rather than each pMHC.
 - To do this, I will use the same variables, WTFit, MTFit and LR_Immuno. For now the only change i will make, is for each _MHC_BINIDING_PROB, I will take an average of each peptide's binding scores across all HLA, rather than a MHC-specific score.
 
-## Notes on binding probability
-- Importantly, the binding prob is a translation of binding aff. So different ligands will be nonbinders at different nM thus different binding probs. Probabily will need a blanket reducton to say 0.1
-- For now i won't replace as it might artificially bring all scores down. Need to see.
-- or instead can we transform the %Rank value? This is a normalised score. Problem is if you do e.g., 1-%Rank.. e.g., 1-0.01 = 0.99=binder. 1-0.03=0.97=NONBINDER.
--
+
 ```{r}
 
 FULL_DT_WIDE = FULL_MUTATIONS_DT%>% dplyr::rename(WuhanPrediction=Prediction)
@@ -354,12 +301,70 @@ FITNESS_DATA=FITNESS_DATA%>%
 
 FITNESS_DATA %>% DT::datatable()
 
-saveRDS(FITNESS_DATA,file="LR_IMMUNO_FITNESS_DATA_PAN_PEPTIDE_SUBVAR.rds")
+#saveRDS(FITNESS_DATA,file="LR_IMMUNO_FITNESS_DATA_PAN_PEPTIDE_SUBVAR.rds")
 
 ```
 
+# Analyse Delta changes in immunogenicity
+
+```{r}
+# Round all numerics. Avoids duplicate observations
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate(Length = nchar(Peptide)) %>% filter(Length %in% c(9,10))
+
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% left_join(delta_FullDataset)
+DELTA_FULL_MUTATIONS_DT
+# Simply impute
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% left_join(delta_FullDataset %>% dplyr::rename(VariantAlignment = Peptide, OmicronPrediction=Prediction))
+DELTA_FULL_MUTATIONS_DT
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+# If a TRAP score does not exist, i.e is NA, then impute 0.01.
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% dplyr::rename(TRAPP_Prediction=Prediction, TRAPP_Omicron = OmicronPrediction) %>% replace_na(list(TRAPP_Prediction = 0.01, TRAPP_Omicron=0.01))
+# Round again
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+# Calculate immunogenicity score: TRAP * MHC
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate(Prediction = TRAPP_Prediction * MHCScore)%>% mutate(OmicronPrediction = TRAPP_Omicron* MT_MHCScore)
+# Round again
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+# Now, to avoid strange data, for prediction scores lower than 1e-05, replace with 1e-05. This is to avoid some scores with e.g., 1e-16.
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction<0.01, 0.01))%>%
+  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction<0.01, 0.01))
+# Exclude any observations where immunogenicity score of WT and MT are both <0.5 - suggests nonimmungoenic binders.. but we're only interested in case where one is predicted immunogenic.
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% filter(!(Prediction < 0.5 & OmicronPrediction < 0.5))
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate(Prediction = round(Prediction, digits=4))%>% mutate(OmicronPrediction = round(OmicronPrediction, digits=4))%>% distinct()
+# Anything rounded to 0.0, replace with 1e-05. To avoid issues with plotting
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate(Prediction = replace(Prediction, Prediction==0.0, 0.01))%>%
+  mutate(OmicronPrediction = replace(OmicronPrediction, OmicronPrediction==0.0, 0.01))
+DELTA_FULL_MUTATIONS_DT=DELTA_FULL_MUTATIONS_DT %>% mutate_if(is.numeric, round, 4)
+DELTA_FULL_MUTATIONS_DT
+```
 
 
+```{r,dpi=300, fig.width = 12}
+my_comparisons = list(c("Wuhan","Delta"))
+# For each variant, violin plot comparing immunogenicity score of WT vs. MT. (Delta vs Omicron)
+DELTAVIOLIN_PLT=DELTA_FULL_MUTATIONS_DT %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%
+        dplyr::rename(Wuhan=Prediction, Delta=OmicronPrediction)%>%
+        melt%>% dplyr::rename(Dataset=variable, Prediction=value)%>%
+  ggviolin(x="Dataset",y="Prediction",add="boxplot",trim=TRUE)+
+        stat_compare_means(comparisons = my_comparisons,label="p.signif")+
+        geom_hline(yintercept = 0.75, linetype="dashed")+facet_grid(~Variant)+ylim(0,1)
+DELTAVIOLIN_PLT
+
+# For each variant, EDDF comparing immunogenicity score of WT vs. MT. (Delta vs Omicron)
+DELTAECDF_PLT=DELTA_FULL_MUTATIONS_DT  %>% select(Peptide, Variant, Predicted_Binding, Prediction, OmicronPrediction)%>%dplyr::rename(Wuhan=Prediction, Delta=OmicronPrediction)%>%
+        melt%>% dplyr::rename(Dataset=variable, Prediction=value) %>%
+        ggplot(aes(x=Prediction, color=Dataset))+stat_ecdf(size=1)+theme_pubr(base_size = 16)+grids()+geom_vline(xintercept = 0.75,linetype="dashed")+facet_grid(~Variant)+theme(legend.position = "right")
+DELTAECDF_PLT
+my_comparisons = list(c("Wuhan","Omicron"))
+
+```
+
+```{r,fig.width=20,dpi=300}
+
+cowplot::plot_grid(DELTAVIOLIN_PLT, DELTAECDF_PLT, NULL,nrow=1, rel_widths = c(0.25,0.35,0.4), align="hv",axis="bl")
+
+```
 
 
 

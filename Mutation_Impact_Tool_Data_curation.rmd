@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+library(purrr)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+```{r}
+FULL_PREDICTIONS_DT = readRDS(file="INSILICO_MUTAGENESIS_COMPILED_PREDICTIONS_SUBONLY_w_MUTATIONDATA.rds")
+FULL_PREDICTIONS_DT = FULL_PREDICTIONS_DT%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))
+```
+
+
+```{r}
+FULL_PREDICTIONS_DT %>% head
+```
+
+```{r}
+## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval:
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+# clean dataset
+
+```{r}
+
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(logsOdds = log(Prediction/WuhanScore)) # log odds ratio
+FULL_PREDICTIONS_DT = FULL_PREDICTIONS_DT %>% mutate(Length=nchar(Peptide)) # length of peptide
+
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(ChangeFrom = paste0(ChangeFrom,"_",SeqMutationPos)) # change from
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(ChangeTo = paste0(ChangeTo,"_",SeqMutationPos)) # change to
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>%ungroup()
+```
+
+# Compute mutants
+
+```{r}
+
+ARGS = c("Mutation")
+summarySE(FULL_PREDICTIONS_DT, measurevar="logsOdds", groupvars=ARGS) # compute summary stats
+
+
+```
+
+
+
+
+
+
+
+
+
+
+

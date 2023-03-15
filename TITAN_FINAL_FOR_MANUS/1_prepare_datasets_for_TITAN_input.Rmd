@@ -1,0 +1,136 @@
+---
+title: "1_prepare_datasets_for_TITAN_input"
+author: "pbuckley"
+date: '2022-04-13'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+```
+
+# Look at data TITAN authors used
+- Need to replicate this
+
+```{r}
+
+fread("public/allinfo_full_data+covid.csv")
+
+```
+
+
+
+# Read in datasets to process
+## PROCESS POGORELY
+- Check out the pogorely dataset
+
+```{r}
+
+POGORELY_DATA=fread("DATASETS/Pogorely_Data/pogorely_COVID_VAX_CD8.tsv") %>% dplyr::rename(Epitope_ID=epitope)
+POGORELY_EPITOPE_TRANSLATION_TABLE = fread("DATASETS/Pogorely_Data/EPITOPE_TRANSLATION_TABLE.csv") 
+POGORELY_DATA %>% nrow
+POGORELY_DATA %>% select(Epitope_ID) %>% table
+
+POGORELY_DATA=POGORELY_DATA %>% inner_join(POGORELY_EPITOPE_TRANSLATION_TABLE)%>% dplyr::rename(Peptide="Peptide_ sequence")
+POGORELY_DATA_subset=POGORELY_DATA %>% select(cdr3b,vb, jb, Peptide) %>% mutate(Dataset = "Pogorely")%>% dplyr::rename(tcr=cdr3b, V_Gene=vb, J_Gene=jb)%>% drop_na()%>%mutate(Antigen_Organism = "SARS-CoV-2") # select required columns
+POGORELY_DATA_subset
+
+```
+
+## PROCESS MIRA
+- extract class I recognising TCRs from MIRA
+```{r}
+MIRA_SUBSET=fread("DATASETS/MIRA/MIRA_DATA_FULL.txt")%>% filter(Data_Class == "ClassI") %>% select(TCR, Peptide) %>% separate(col = "TCR", into = c("tcr","V_Gene","J_Gene"), sep="\\+")%>% mutate(Dataset = "MIRA")%>%mutate(Antigen_Organism = "SARS-CoV-2")
+MIRA_SUBSET
+```
+
+# VDJdb
+ - extract class I recognising TCRs from VDJdb
+```{r}
+
+VDJdb_subset=fread("DATASETS/VDJdb/VDJDB_FULL_APRIL2022.tsv") %>% filter(`MHC class` == "MHCI")%>% filter(Species == "HomoSapiens")%>% filter(Gene == "TRB")%>% select(CDR3, V, J, Epitope, `Epitope species`)%>%
+  dplyr::rename(tcr=CDR3, V_Gene = V, J_Gene=J, Peptide=Epitope, Antigen_Organism = `Epitope species`)%>% mutate(Dataset = "VDJdb")
+
+```
+
+# combine the TCR-specificity datasets
+- remove TCRs that are >length 20
+```{r}
+MIRA_SUBSET=MIRA_SUBSET %>% filter(! V_Gene %in% grep("X",V_Gene, value = T)) # remove TCRs with X in V gene
+combinedData = rbind(POGORELY_DATA_subset, MIRA_SUBSET, VDJdb_subset) # combine datasets
+combinedData=combinedData %>% mutate(Length = nchar(Peptide)) %>% filter(! Length > 20) # remove TCRs with AA >20
+#readr::write_csv(combinedData, file="DATASETS/ALL_TCR_EPITOPE_DATA_NOTPROCESSED.csv")
+#readr::write_csv(VDJdb_subset, file="DATASETS/VDJDB_NOTPROCESSED.csv")
+
+```
+
+
+# CONVERT PEPTIDE TO SMILES
+
+```{r}
+
+PEPS=combinedData%>% select(Peptide) %>% distinct()  # get unique peptides in dataset
+library(Peptides)
+library(foreach)
+library(doParallel)
+
+SMILES_ENCODING=foreach(i=1:nrow(PEPS), .combine = "rbind", .packages = c("data.table","dplyr","Peptides")) %do% {
+  SMILES_I= aaSMILES(PEPS %>% filter(row_number()==i) %>% pull) # convert peptide to SMILES
+  data.table(Peptide=PEPS %>% filter(row_number()==i) %>% pull, # create data table with peptide and SMILES
+             SMILES=SMILES_I)
+}
+
+
+```
+
+# JOIN W COMBINED DATA
+
+```{r}
+
+combinedData=combinedData %>% full_join(SMILES_ENCODING) %>% mutate(label=1) # join with combined data
+readr::write_csv(combinedData, file="DATASETS/ALL_TCR_EPITOPE_DATA_NOTPROCESSED.csv") # write to file
+
+```
+
+
+# TCR FULL: Create unique IDs and join with data
+ - create unique IDs for TCRs and peptides for TITAN. Each peptide and TCR needs a unique ID
+```{r}
+TCRs=combinedData%>% ungroup %>% unite(tcr,c(tcr,V_Gene,J_Gene),sep="+") %>% select(tcr) %>% distinct() %>% mutate(Dataset = "TCR") %>% dplyr::rename(Sequence = tcr) # create tcr from cdr3, v and j genes
+Peptides=combinedData %>% ungroup %>% select(Peptide) %>% distinct() %>%
+        mutate(Dataset = "Peptide")%>% dplyr::rename(Sequence = Peptide) # extract unique peptide and label as peptide
+
+COMBINED_IDS=Peptides %>% rbind(TCRs) %>% mutate(ID = row_number())  # create unique IDs for each peptide and TCR
+PEP_ID=COMBINED_IDS %>% filter(Dataset == "Peptide")%>% select(!Dataset)%>% dplyr::rename(Peptide=Sequence, Peptide_ID=ID) # extract peptide IDs
+TCR_ID=COMBINED_IDS %>% filter(Dataset == "TCR")%>% select(!Dataset)%>% dplyr::rename(tcr=Sequence,TCR_ID=ID) # extract TCR IDs
+
+combinedData=combinedData%>% unite(tcr,c(tcr,V_Gene,J_Gene),sep="+") %>% full_join(TCR_ID) %>% full_join(PEP_ID)%>% distinct() %>% separate(tcr, c("tcr","V_Gene","J_Gene"),sep="\\+") # join with combined data
+```
+
+
+```{r}
+#CHECK TCR
+TCR_DT = combinedData %>% select(tcr) %>% distinct()
+# check if TCRs are valid - i.e containing valid amino acids
+VALIDSEQS=foreach(i=1:nrow(TCR_DT),.combine = "rbind", .packages = c("data.table","dplyr","protr"))%do% {
+  tcr=TCR_DT %>% filter(row_number()==i)%>% pull(tcr)
+  VALID = protcheck(tcr)
+  data.table(TCR=tcr, ValidSeq=VALID)
+}
+VALIDSEQS %>% select(ValidSeq) %>% table
+TO_EXCLUDE=VALIDSEQS %>% filter(ValidSeq==FALSE)%>% pull(TCR) # get TCRs that are not valid
+
+combinedData=combinedData %>% filter(! tcr %in% TO_EXCLUDE) # remove TCRs that are not valid
+```
+
+
+```{r}
+
+readr::write_csv(combinedData, file="DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL_CD8.csv")
+
+```
+
+
+

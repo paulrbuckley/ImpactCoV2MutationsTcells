@@ -26,13 +26,22 @@ ClosestMatch2 = function(string, stringVector){
 
 ```{r}
 ## AA Ninemers contact position, changes FROM AA X
-NINE_CONTACT_FROM_PLT=readRDS(file="NINE_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)
+NINE_CONTACT_FROM_PLT=readRDS(file="NINE_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 NINE_CONTACT_FROM_PLT
 ## AA Ninemers contact position, changes TO AA X
-NINE_CONTACT_TO_PLT=readRDS(file="NINE_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)
+NINE_CONTACT_TO_PLT=readRDS(file="NINE_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 NINE_CONTACT_TO_PLT
 ## Specific mutation change, ninemers contact postion
-NINE_CONTACT_TO_SPECIFICMUT_PLT=readRDS(file="NINE_CONTACT_TO_SPECIFICMUT_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()
+NINE_CONTACT_TO_SPECIFICMUT_PLT=readRDS(file="NINE_CONTACT_TO_SPECIFICMUT_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 NINE_CONTACT_TO_SPECIFICMUT_PLT
 ```
 
@@ -42,13 +51,22 @@ NINE_CONTACT_TO_SPECIFICMUT_PLT
 
 ```{r}
 ## AA TEN contact position, changes FROM AA X
-TEN_CONTACT_FROM_PLT=readRDS(file="TEN_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)
+TEN_CONTACT_FROM_PLT=readRDS(file="TEN_CONTACT_FROM_PLT.rds")+theme_pubr(base_size=16)+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 TEN_CONTACT_FROM_PLT
 ## AA TEN contact position, changes TO AA X
-TEN_CONTACT_TO_PLT=readRDS(file="TEN_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)
+TEN_CONTACT_TO_PLT=readRDS(file="TEN_CONTACT_TO_PLT.rds")+theme_pubr(base_size=16)+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 TEN_CONTACT_TO_PLT
 # Ten change to AA AND POS
-TEN_CONTACT_TO_AA_POS_PLT=readRDS(,file="TEN_CONTACT_TO_AA_POS_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()
+TEN_CONTACT_TO_AA_POS_PLT=readRDS(,file="TEN_CONTACT_TO_AA_POS_PLT.rds")+theme_pubr(base_size=16)+rotate_x_text()+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 TEN_CONTACT_TO_AA_POS_PLT
 
 ```
@@ -64,25 +82,34 @@ ESCAPE_POT_PER_PEPTIDE_PLT
 
 ```{r}
 
-HYDROPHOBICITY_ANCHORFREQ_PLT=readRDS(file="HYDROPHOBICITY_ANCHORFREQ_PLT.rds")
-HLA_TRANSITIONPOT_GRPS_PLT=readRDS(file="HLA_TRANSITIONPOT_GRPS_PLT.rds")
-AA_COMP_TRANSITIONPOT_GRPS=readRDS(file="AA_COMP_TRANSITIONPOT_GRPS.rds")
+HYDROPHOBICITY_ANCHORFREQ_PLT=readRDS(file="HYDROPHOBICITY_ANCHORFREQ_PLT.rds")+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
+HLA_TRANSITIONPOT_GRPS_PLT=readRDS(file="HLA_TRANSITIONPOT_GRPS_PLT.rds")+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
+AA_COMP_TRANSITIONPOT_GRPS=readRDS(file="AA_COMP_TRANSITIONPOT_GRPS.rds")+
+  theme(legend.text = element_text(size=16))+theme(legend.title = element_text(size=16))+
+       theme(strip.text.x = element_text(size = 16))+theme(axis.title.y = element_text(size = 16))+
+        theme(axis.title.x = element_text(size = 16))
 
 HLA_TRANSITIONPOT_GRPS_PLT
 ```
 
 
 ```{r,dpi=300, fig.width = 24}
-A_GRID = cowplot::plot_grid(NINE_CONTACT_FROM_PLT, NINE_CONTACT_TO_PLT, nrow=1)
+A_GRID = cowplot::plot_grid(NINE_CONTACT_FROM_PLT+ggtitle("9-mer"), NINE_CONTACT_TO_PLT+ggtitle("9-mer"), nrow=1)
 
-B_GRID = cowplot::plot_grid(NINE_CONTACT_TO_SPECIFICMUT_PLT+theme(legend.position = "none"), nrow=1)
+B_GRID = cowplot::plot_grid(NINE_CONTACT_TO_SPECIFICMUT_PLT+theme(legend.position = "none")+ggtitle("9-mer"), nrow=1)
 
 
-C_GRID = cowplot::plot_grid(TEN_CONTACT_FROM_PLT+theme(legend.position = "none"), TEN_CONTACT_TO_PLT+theme(legend.position = "none"), nrow=1)
+C_GRID = cowplot::plot_grid(TEN_CONTACT_FROM_PLT+theme(legend.position = "none")+ggtitle("10-mer"), TEN_CONTACT_TO_PLT+ggtitle("10-mer")+theme(legend.position = "none"), nrow=1)
 
-D_GRID = cowplot::plot_grid(TEN_CONTACT_TO_AA_POS_PLT+theme(legend.position = "none"), nrow=1)
+D_GRID = cowplot::plot_grid(TEN_CONTACT_TO_AA_POS_PLT+ggtitle("10-mer")+theme(legend.position = "none"), nrow=1)
 
-E_GRID = cowplot::plot_grid(ESCAPE_POT_PER_PEPTIDE_PLT, nrow=1)
+E_GRID = cowplot::plot_grid(ESCAPE_POT_PER_PEPTIDE_PLT+ggtitle("Escape-score"), nrow=1)
 
 F_GRID = cowplot::plot_grid(HYDROPHOBICITY_ANCHORFREQ_PLT, NULL, nrow=1, ncol=2, rel_widths = c(1, 2))
 F_GRID_ii = cowplot::plot_grid(AA_COMP_TRANSITIONPOT_GRPS, NULL, nrow=1, ncol=2, rel_widths = c(1, 2))

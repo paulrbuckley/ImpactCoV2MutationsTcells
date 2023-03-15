@@ -1,0 +1,127 @@
+---
+title: "5_prepare_model_testing_and_10foldcv"
+author: "pbuckley"
+date: '2022-04-28'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+# Model testing
+- Here we prepare the test dataset for model testing
+-
+
+## Read in combinedData and stitchrcombined
+
+```{r}
+
+combinedData = fread("DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL.csv")
+STITCHR_OUT_COMBINEDDATA = readRDS("DATASETS/STITCHR_COMBINEDDATA_OUT_PROCESSED.rds")
+
+```
+
+
+## Pre-process combined data
+- Here we pre-process the combined data to remove unproductive TCRs and add in the TRBV and TRBJ from STITCHR
+- Add SMILES for each epitope to the dataset
+```{r}
+
+combinedData=combinedData %>% inner_join(STITCHR_OUT_COMBINEDDATA %>% select(TCR_ID, TRB_aa_no_leader_no_constant, TRBV, TRBJ)%>% distinct()) # Add in TRBV and TRBJ from STITCHR
+combinedData=combinedData%>%filter(! tcr %in% grep("unproductive", tcr,value = T)) # Remove unproductive TCRs
+
+combinedData=combinedData %>% dplyr::rename(cdr3=tcr) %>% dplyr::rename(tcr = TRB_aa_no_leader_no_constant) # Rename tcr and cdr3
+combinedData=combinedData %>% select(! SMILES) # Remove SMILES from combinedData
+
+# PROTCHECK on Peptide and TCR
+TCR_DT = combinedData %>% select(tcr) %>% distinct
+PEPTIDE_DT = combinedData %>% select(Peptide) %>% distinct()
+
+# CHECK PEPTIDE SEQUENCES ARE VALID
+VALIDSEQS=foreach(i=1:nrow(PEPTIDE_DT),.combine = "rbind", .packages = c("data.table","dplyr","protr"))%do% {
+  PEPTIDE=PEPTIDE_DT$Peptide[i]
+  VALID = protcheck(PEPTIDE)
+  data.table(Peptide=PEPTIDE, ValidSeq=VALID)
+}
+VALIDSEQS %>% select(ValidSeq) %>% table
+TO_EXCLUDE=VALIDSEQS %>% filter(ValidSeq==FALSE)%>% pull(Peptide)
+combinedData=combinedData %>% filter(! Peptide %in% TO_EXCLUDE)
+
+
+
+# OUT ALL PEPTIDES FOR SMILES RUN
+#combinedData %>% select(Peptide) %>% distinct()%>%write.csv(file="ALL_PEPTIDES_SMILES.csv",quote=FALSE,row.names=FALSE)
+
+# READ SMILES
+NEW_SMILES = fread("ALL_PEPTIDES_SMILESSMILES_OUT.csv")
+combinedData=combinedData %>% drop_na() %>% inner_join(NEW_SMILES)
+
+
+```
+
+
+# Test OTB model on Wuhan eps with mutation TCRs
+- Here we aim to determine the performance of our trained model on epitopes of interest, those Wuhan-mutated epitopes
+```{r}
+
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds") # Read in mutations
+TEST_SET=combinedData %>% filter(Peptide %in% MUTATIONS$Peptide)%>% mutate(label=1) # Filter to only those epitopes with mutations (true pve set)
+
+PEPTIDE_DT_FULL = TEST_SET %>% select(Peptide, Peptide_ID,SMILES)%>% distinct # Get unique peptide ids
+TCR_DT_FULL = TEST_SET %>% select(tcr, TCR_ID)%>% distinct # Get unique TCR ids
+
+N_SAMPLES=nrow(TEST_SET) # Number of samples to generate nve false data for
+UNIQUE_DT=TEST_SET%>% select(Peptide_ID, TCR_ID)%>% distinct() # Get unique peptide and tcr ids
+
+# Generate nve data the same size as pve data
+EXPANDED_DATASET=TEST_SET%>% select(Peptide_ID, TCR_ID)%>% distinct() %>% # Get unique peptide and tcr ids
+        tidyr::expand(Peptide_ID, TCR_ID)%>% # Expand to all possible combinations
+        anti_join(UNIQUE_DT) %>% sample_n(size = N_SAMPLES) # Remove the true pve data and sample number of nve obs to equal pve
+
+# Link EXPANDED DATA with right peptide ids and smiles etc
+NVE_DATASET=EXPANDED_DATASET %>% inner_join(PEPTIDE_DT_FULL) %>% inner_join(TCR_DT_FULL)%>% mutate(label=0)%>% distinct() # Add in peptide and tcr sequences
+
+TEST_SET=TEST_SET %>% select(Peptide, Peptide_ID, TCR_ID, SMILES, tcr, label)%>% rbind(NVE_DATASET)%>% distinct()
+EXPANDED_DATASET=NULL
+gc()
+# Write out test set for OTB model
+TEST_SET=TEST_SET %>% distinct()
+TEST_SET %>% select(label)%>% table
+FILEPATH="TEST_OTB_WUHAN_MUTATED/"
+dir.create(FILEPATH)
+
+#epitopes.smi
+TEST_SET %>% select(SMILES, Peptide_ID)%>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"epitopes.smi"), col_names = FALSE)
+
+TEST_SET %>% select(tcr, TCR_ID) %>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"tcr.csv"), col_names = FALSE)
+
+TEST_SET %>% select(Peptide_ID,TCR_ID,label) %>% dplyr::rename(ligand_name=Peptide_ID, sequence_id=TCR_ID)%>%
+  write.csv(file = paste0(FILEPATH,"test.csv"),row.names = TRUE)
+
+TEST_SET %>% select(label)%>% table
+```
+
+
+
+
+
+
+
+
+
+

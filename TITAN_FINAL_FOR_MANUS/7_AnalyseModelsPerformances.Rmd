@@ -1,0 +1,196 @@
+---
+title: "10_5_AnalyseModelsPerformances"
+author: "pbuckley"
+date: '2022-05-12'
+output: bookdown::html_document2
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+# Intro
+- This sheet examines model performance against our test dataset. The test dataset comprises epitopes-TCRs not includedin training. Gicen our research question, these are epitopes which are mutated in Omicron
+
+## Read in combinedData and stitchrcombined
+
+```{r}
+combinedData = fread(cmd = "unzip -p DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL.csv") # Read in combinedData
+
+STITCHR_OUT_COMBINEDDATA = readRDS("DATASETS/STITCHR_COMBINEDDATA_OUT_PROCESSED.rds") # Read in stitchr data containing V/J sequences
+
+```
+
+
+## Preprocess COMINED DATA
+- Remove unproductive TCRs, remove TCRs with no V gene, remove TCRs with no J gene, remove TCRs with no CDR3, remove TCRs with no peptide, remove TCRs with no SMILES
+```{r}
+
+combinedData=combinedData %>% inner_join(STITCHR_OUT_COMBINEDDATA %>% select(TCR_ID, TRB_aa_no_leader_no_constant, TRBV, TRBJ)%>% distinct()) # Add V/J sequences to combinedData
+combinedData=combinedData%>%filter(! tcr %in% grep("unproductive", tcr,value = T)) # Remove unproductive TCRs
+
+combinedData=combinedData %>% dplyr::rename(cdr3=tcr) %>% dplyr::rename(tcr = TRB_aa_no_leader_no_constant) # Rename cdr3 and tcr columns
+combinedData=combinedData %>% select(! SMILES) # Remove SMILES column
+
+# PROTCHECK on Peptide and TCR
+TCR_DT = combinedData %>% select(tcr) %>% distinct
+PEPTIDE_DT = combinedData %>% select(Peptide) %>% distinct()
+
+# CHECK PEPTIDE
+VALIDSEQS=foreach(i=1:nrow(PEPTIDE_DT),.combine = "rbind", .packages = c("data.table","dplyr","protr"))%do% {
+  PEPTIDE=PEPTIDE_DT$Peptide[i]
+  VALID = protcheck(PEPTIDE)
+  data.table(Peptide=PEPTIDE, ValidSeq=VALID)
+}
+VALIDSEQS %>% select(ValidSeq) %>% table
+TO_EXCLUDE=VALIDSEQS %>% filter(ValidSeq==FALSE)%>% pull(Peptide)
+combinedData=combinedData %>% filter(! Peptide %in% TO_EXCLUDE)
+
+
+# OUT ALL PEPTIDES FOR SMILES RUN
+#combinedData %>% select(Peptide) %>% distinct()%>%write.csv(file="ALL_PEPTIDES_SMILES.csv",quote=FALSE,row.names=FALSE)
+
+# READ SMILES
+NEW_SMILES = fread("ALL_PEPTIDES_SMILESSMILES_OUT.csv")
+combinedData=combinedData %>% drop_na() %>% inner_join(NEW_SMILES)
+
+
+```
+
+# Performance of model used to predict T cell - epitope recognition
+- Create a roc-auc to compare the performance of the model used to predict T cell - epitope recognition
+
+```{r,fig.width=8,fig.height=6,message=FALSE,warning=FALSE,dpi=300}
+# We can use t(), the order going in to being written out is identical and has been tested to be correct
+SEENTCR_UNSEEN_EP_PREDICTIONS=fread("TRAIN_TITAN_OTB_FINAL_TEST_OTB_POGORELY_MIRA_NOWUHANMUT_100K_NO_OMI_NVE/test_fine_tuned/OTB_POG/results/WUHAN_MUTATED.csv")%>% t()%>% as.data.table()%>% dplyr::rename(ImmunogenicityScore=V1, Immunogenicity=V2) # Read in predictions
+
+ROC_AUC = roc(Immunogenicity ~ ImmunogenicityScore,data=SEENTCR_UNSEEN_EP_PREDICTIONS) # Create ROC-AUC curve
+# Use GGROC to combine and visualise the ROC-AUC curves
+roc_AUC=ggroc(list(TITAN=ROC_AUC),legacy.axes = TRUE,size=1.25) + theme_bw() +
+  annotate(hjust=0,"size"=4,"text",x=.40,y=.19,label=paste0("TITAN: ", round(auc(ROC_AUC),digits = 3))) + font("xy.text",size=16,color="black")+ font("xlab",size=16,color="black")+ font("ylab",size=16,color="black") + font("legend.title",color="white") + font("legend.text",size=14)+ geom_abline(size=1,intercept = 0, slope = 1,color = "darkgrey", linetype = "dashed")+theme(panel.background = element_rect(colour = "black", size=0.5))+ coord_fixed(xlim = 0:1, ylim = 0:1)#+ggtitle("ROC Curves")
+roc_AUC
+```
+
+
+
+```{r,fig.width=8,fig.height=6,message=FALSE,warning=FALSE,dpi=300}
+# Set factor levels
+SEENTCR_UNSEEN_EP_PREDICTIONS$Immunogenicity = factor(SEENTCR_UNSEEN_EP_PREDICTIONS$Immunogenicity,levels = c(1,0))
+
+# Create 'DATA_FOR_PR'. This is for plotting. We modify the model name labels and colour labels to ensure consistency between ROC-AUC and PR-AUC plots
+DATA_FOR_PR = SEENTCR_UNSEEN_EP_PREDICTIONS
+#Calculate the real praucs
+PR_AUC_COMBINED=SEENTCR_UNSEEN_EP_PREDICTIONS %>% pr_auc(Immunogenicity,ImmunogenicityScore)
+PR_AUC_COMBINED$.estimate=round(PR_AUC_COMBINED$.estimate,digits=3)
+
+# Produce and plot PR-AUC curve
+pr_AUC=DATA_FOR_PR %>% pr_curve(Immunogenicity,ImmunogenicityScore) %>%
+  autoplot() + aes()+scale_size_manual(values=c(1.25)) +annotate(hjust=0,"size"=4,"text",x=.4,y=.19,label=paste0("TITAN_OTB_POG_MIRA: ",PR_AUC_COMBINED %>%pull(".estimate") )) + geom_hline(size=1,color="darkgrey",yintercept = 0.5)+ font("xy.text",size=16,color="black")+ font("xlab",size=16,color="black")+ font("ylab",size=16,color="black") + font("legend.title",color="white") + font("legend.text",size=14)+theme(panel.background = element_rect(colour = "black", size=0.5))+ coord_fixed(xlim = 0:1, ylim = 0:1)
+pr_AUC
+```
+
+
+```{r}
+SEENTCR_UNSEEN_EP_PREDICTIONS %>% ggdensity(x="ImmunogenicityScore",y="..density..",fill="Immunogenicity")
+```
+
+# Use ROC-AUC optimal threshold to compute model metrics
+
+```{r}
+DATA_FOR_PR=DATA_FOR_PR %>% mutate(Immunogenicity = ifelse(Immunogenicity==1,"Positive","Negative"))%>% ungroup
+    
+    ROC_MODEL=roc(Immunogenicity ~ ImmunogenicityScore,data=DATA_FOR_PR)
+    threshold =   coords(roc=ROC_MODEL, x="best", input="threshold", best.method="youden", transpose=F)$threshold
+    threshold
+    #threshold=0.47
+    threshold_data = DATA_FOR_PR%>% mutate(ImmunogenicityPrediction = ifelse(ImmunogenicityScore > threshold, "Positive","Negative"))
+    CM=confusionMatrix(positive = "Positive",mode = "prec_recall",reference=factor(threshold_data  %>% select(Immunogenicity) %>% pull(),
+                       levels = c("Negative","Positive")),
+                       factor(threshold_data %>% select(ImmunogenicityPrediction) %>% pull(),
+                       levels=c("Negative","Positive")))
+    TEST=as.matrix(CM, what = "classes")
+    data.table("Metrics"=row.names(TEST), TEST)%>% pivot_wider(names_from = Metrics, values_from = V1)%>% mutate_if(is.numeric, round, digits=3)%>% DT::datatable()
+
+    
+table=data.frame(CM$table)
+plotTable <- table %>%
+  mutate(Performance = ifelse(table$Prediction == table$Reference, "Accurate", "Inaccurate")) %>%
+  group_by(Reference) %>%
+  mutate(prop = Freq/sum(Freq))
+CMplot=ggplot(data = plotTable, mapping = aes(x = Reference, y = Prediction, fill = Performance, alpha = prop)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), vjust = .5, fontface  = "bold", alpha = 1,size=8) +
+  scale_fill_manual(values = c(Accurate = "green", Inaccurate = "red")) +
+  theme_bw() +
+  xlim(rev(levels(table$Reference)))+ font("xy.text",size=18,color="black")+ font("xlab",size=18,color="black")+ font("ylab",size=18,color="black") + theme(plot.title = element_text(size=18))+ font("legend.text",size=12)
+CMplot
+
+```
+
+```{r}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
+```
+
+
+
+# epitope specific ROC AUCs
+
+```{r,dpi=300}
+PEPTIDE_DT=combinedData %>% select(Peptide_ID, Peptide)%>% distinct()
+TCR_DT = combinedData %>% select(TCR_ID, tcr)%>% distinct()
+TEST_DATA = fread("TEST_OTB_WUHAN_MUTATED/test.csv")%>% dplyr::rename(ID=V1) 
+
+
+threshold_data %>% mutate(ID=row_number())%>%
+  mutate(label = ifelse(Immunogenicity == "Positive",1,0))%>% inner_join(TEST_DATA)%>% dplyr::rename(Peptide_ID=ligand_name, TCR_ID=sequence_id)%>%
+  inner_join(PEPTIDE_DT)%>% group_by(Peptide) %>% dplyr::summarise(ROC=as.numeric(roc(Immunogenicity ~ ImmunogenicityScore)$auc))%>% DT::datatable()
+  
+threshold_data %>% mutate(ID=row_number())%>%
+  mutate(label = ifelse(Immunogenicity == "Positive",1,0))%>% inner_join(TEST_DATA)%>% dplyr::rename(Peptide_ID=ligand_name, TCR_ID=sequence_id)%>%
+  inner_join(PEPTIDE_DT)%>% group_by(Peptide) %>% dplyr::summarise(ROC=as.numeric(roc(Immunogenicity ~ ImmunogenicityScore)$auc),n=n())%>%arrange(desc(ROC))%>%
+  ggbarplot(x="Peptide",y="ROC",fill="n")+rotate_x_text() +
+  scale_fill_gradient2(low = 'blue', mid = 'white', high = 'red')+geom_hline(yintercept = 0.5,linetype="dashed")
+
+threshold_data %>% mutate(ID=row_number())%>%
+  mutate(label = ifelse(Immunogenicity == "Positive",1,0))%>% inner_join(TEST_DATA)%>% dplyr::rename(Peptide_ID=ligand_name, TCR_ID=sequence_id)%>%
+  inner_join(PEPTIDE_DT)%>% group_by(Peptide) %>% dplyr::summarise(ROC=as.numeric(roc(Immunogenicity ~ ImmunogenicityScore)$auc),n=n())%>%arrange(desc(ROC))%>%
+  filter(ROC>=0.6)
+
+
+threshold_data %>% mutate(ID=row_number())%>%
+  mutate(label = ifelse(Immunogenicity == "Positive",1,0))%>% inner_join(TEST_DATA)%>% dplyr::rename(Peptide_ID=ligand_name, TCR_ID=sequence_id)%>%
+  inner_join(PEPTIDE_DT) %>% inner_join(TCR_DT)%>%
+  filter(Peptide %in% c("LLWPVTLAC"))
+
+combinedData %>% filter(Peptide %in% c("LLWPVTLAC"))
+
+combinedData %>% filter(Peptide %in% MUTATIONS$Peptide) %>% select(Peptide) %>% table
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

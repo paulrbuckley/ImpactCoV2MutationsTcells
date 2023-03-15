@@ -1,0 +1,189 @@
+---
+title: "Thimble_generate_fullTCRs"
+author: "pbuckley"
+date: '2022-04-27'
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+# Load in the data
+- and clean
+
+```{r}
+combinedData = fread("DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL.csv")
+# Read in combinedData generated in markdpwn doc 1
+combinedData=combinedData %>% mutate(V_Gene = gsub("TCRB","TRB",V_Gene)) %>% mutate(J_Gene = gsub("TCRB","TRB",J_Gene))  # Change TCRB to TRB in V and J genes
+
+# Left with a few V gene ambiguties. Get rid of the /X part
+combinedData %>% filter(V_Gene %in% grep("\\/",V_Gene, value=T)) %>% select(V_Gene) %>% table
+
+combinedData=combinedData %>% mutate(V_Gene = gsub("\\/.*","",V_Gene)) # Remove the / in the V gene
+combinedData=combinedData %>% mutate(V_Gene = gsub("TRBV0*","TRBV",V_Gene)) # Remove the 0 in the V gene
+combinedData=combinedData %>% mutate(J_Gene = gsub("TRBJ0*","TRBJ",J_Gene)) # Remove the 0 in the J gene
+combinedData=combinedData %>% mutate(V_Gene = gsub("\\-0","\\-", V_Gene))  # Remove the -0 in the V gene
+combinedData=combinedData %>% mutate(J_Gene = gsub("\\-0","\\-", J_Gene))  # Remove the -0 in the J gene
+
+combinedData[combinedData$V_Gene == 'TRBV2-1',]$V_Gene='TRBV2*1' # Fix the V gene names
+combinedData[combinedData$V_Gene == 'TRBV28-1',]$V_Gene='TRBV28*1' # Fix the V gene names
+combinedData[combinedData$V_Gene == 'TRBV19-1',]$V_Gene='TRBV19*1'
+combinedData[combinedData$V_Gene == 'TRBV30-1',]$V_Gene='TRBV30*1'
+combinedData[combinedData$V_Gene == 'TRBV13-1',]$V_Gene='TRBV13*1'
+combinedData[combinedData$V_Gene == 'TRBV27-1',]$V_Gene='TRBV27*1'
+combinedData[combinedData$V_Gene == 'TRBV9-1',]$V_Gene='TRBV9*1'
+combinedData[combinedData$V_Gene == 'TRBV18-1',]$V_Gene='TRBV18*1'
+combinedData[combinedData$V_Gene == 'TRBV14-1',]$V_Gene='TRBV14*1'
+combinedData[combinedData$V_Gene == 'TRBV15-1',]$V_Gene='TRBV15*1'
+combinedData[combinedData$V_Gene == 'TRBV16-1',]$V_Gene='TRBV16*1'
+combinedData[combinedData$V_Gene == 'TRBV1-1',]$V_Gene='TRBV1*1'
+combinedData = combinedData%>% filter(! TCR_ID %in% c(6291, 8460, 8628, 9472, 9761,9828)) # Remove the problematic TCRs
+#PROBLEMATIC_VGENES_NOLEADER=readRDS("PROBLEMATIC_VGENES_STITCHER.rds")
+
+#PROBLEMATIC_VGENE_DATA = combinedData %>% filter(V_Gene %in% PROBLEMATIC_VGENES_NOLEADER)
+#combinedData = combinedData %>% anti_join(PROBLEMATIC_VGENE_DATA)
+#PROBLEMATIC_VGENE_DATA=PROBLEMATIC_VGENE_DATA %>% mutate(V_Gene = gsub("\\-","*",V_Gene))
+#combinedData = PROBLEMATIC_VGENE_DATA %>% rbind(combinedData)
+
+```
+
+
+```{r}
+# prepare data to run stitchr
+combinedData_stitchr=data.table(TCR_name = combinedData$TCR_ID,
+           TRAV="",
+           TRAJ="",
+           TRA_CDR3="",
+           TRBV=combinedData$V_Gene,
+           TRBJ=combinedData$J_Gene,
+           TRB_CDR3=combinedData$tcr,
+           TRAC="",
+           TRBC="",
+           TRA_leader="",
+           TRB_leader="",
+           Linker="",
+           Link_order="",
+           TRA_5_prime_seq="",
+           TRA_3_prime_seq="",
+           TRB_5_prime_seq="",
+           TRB_3_prime_seq="")
+
+combinedData_stitchr%>% readr::write_tsv(file="stitchr-main/StitchedData/combinedData_stitchr.tsv")
+
+```
+
+
+
+```{r}
+# Read in stitchr output
+STITCHR_OUT_COMBINEDDATA=fread("stitchr-main/StitchedData/combinedData_stitchr_out.tsv") %>% dplyr::rename(TCR_ID=TCR_name)
+
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% select(TCR_ID,TRB_aa, TRBV, TRBJ, TRB_CDR3,TRBC, TRB_leader, `Warnings/Errors`)%>% dplyr::rename(tcr = TRB_CDR3) # Rename the columns
+
+```
+
+# Find V leader region
+
+```{r}
+
+V_LEADERSEQS=Biostrings::readAAStringSet("IGMT_REFSEQS/V_leader_sequences.fasta",use.names = TRUE) # Read in the V leader sequences
+
+REF_VLEADER_NAMES=data.table(FullNames = names(V_LEADERSEQS), LeaderSeq=V_LEADERSEQS %>% as.data.table() %>% pull(x))  %>% mutate(test = stringr::str_extract(FullNames, "\\b\\|TRBV[A-Z|0-9|\\*|\\-|\\/]+\\b"))%>%  # Extract the V gene name
+  mutate(TRB_leader = gsub("\\|","",test))%>% mutate(TRB_leader = paste0(TRB_leader,"(L)"))
+
+STITCHR_OUT_COMBINEDDATA %>% full_join(REF_VLEADER_NAMES %>% select(TRB_leader, LeaderSeq))%>% select(LeaderSeq) %>% table
+
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% full_join(REF_VLEADER_NAMES %>% select(TRB_leader, LeaderSeq))
+
+```
+
+
+# Find issues
+- 130 TCRs binding Omicron epitopes are not suitable.
+- 2190 observations have 'unfixable' errors.
+- These will be removed.
+```{r}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
+STITCHR_OUT_COMBINEDDATA %>% select(TRBC) %>% table
+STITCHR_OUT_COMBINEDDATA %>% filter(TRBC == "")
+STITCHR_OUT_COMBINEDDATA %>% filter(TRBC == "") %>% dplyr::rename(V_Gene = TRBV, J_Gene=TRBJ)%>% inner_join(combinedData)%>% select(tcr, V_Gene, J_Gene, Dataset, Antigen_Organism) %>% distinct %>% select(Dataset) %>% table
+
+STITCHR_OUT_COMBINEDDATA %>% filter(TRBC == "") %>% dplyr::rename(V_Gene = TRBV, J_Gene=TRBJ)%>% inner_join(combinedData)%>% select(tcr, V_Gene, J_Gene, Dataset, Antigen_Organism, Peptide, `Warnings/Errors`) %>% distinct %>% filter(Peptide %in% MUTATIONS$Peptide)
+
+```
+
+
+# Filter out poor data
+
+```{r}
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% filter(!TRBC == "")
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% drop_na()
+
+```
+
+
+
+# Find C region
+- Exclude C region later from sequence
+
+
+```{r}
+
+
+C_REGIONSEQS=Biostrings::readAAStringSet("IGMT_REFSEQS/C_region_sequences.fasta",use.names = TRUE) # Read in the C region sequences
+
+REF_C_REGIONSEQS_NAMES=data.table(FullNames = names(C_REGIONSEQS), CSeq=C_REGIONSEQS %>% as.data.table() %>% pull(x))  %>% mutate(test = stringr::str_extract(FullNames, "\\b\\|TRBC[A-Z|0-9|\\*|\\-|\\/]+\\b"))%>%
+  mutate(TRBC = gsub("\\|","",test)) # Extract the C gene name
+
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% full_join(REF_C_REGIONSEQS_NAMES %>% select(TRBC, CSeq)) # Join the C region sequences to the data
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% drop_na()
+
+```
+
+
+
+
+
+```{r}
+
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% mutate(TRB_aa_no_leader = stringr::str_remove(TRB_aa, LeaderSeq) )
+
+STITCHR_OUT_COMBINEDDATA=STITCHR_OUT_COMBINEDDATA %>% mutate(TRB_aa_no_leader_no_constant = stringr::str_remove(TRB_aa_no_leader, CSeq) )
+
+
+saveRDS(STITCHR_OUT_COMBINEDDATA, file="DATASETS/STITCHR_COMBINEDDATA_OUT_PROCESSED.rds")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

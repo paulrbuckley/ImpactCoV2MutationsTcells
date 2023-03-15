@@ -1,0 +1,451 @@
+Peptide,Protein,Predicted_Binding,BA_Rank,Dataset
+AIAMACLVGL,membrane glycoprotein,HLA-A0201,1.0672,WT_Delta
+AIAMACLVGL,membrane glycoprotein,HLA-A0202,0.9824,WT_Delta
+AIAMACLVGL,membrane glycoprotein,HLA-A0206,0.7239,WT_Delta
+AIAMACLVGL,membrane glycoprotein,HLA-A0211,1.8531,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,1.1169,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.9831,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1503,0.4597,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1801,0.1194,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4001,0.7696,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4002,0.7418,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4402,1.4449,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4403,1.2108,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5001,1.4549,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,1.138,WT_Delta
+FEYYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,0.6871,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-A2501,1.5985,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B0702,0.1512,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B0801,1.0786,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B1402,0.4879,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B3501,0.543,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B3503,0.0569,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B4201,0.1043,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B5101,0.3263,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-B5301,1.7315,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0102,0.0907,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0303,0.7394,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0304,0.7394,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0401,0.677,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0801,0.6755,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C0802,1.1633,WT_Delta
+FPPTSFGPL,ORF1ab polyprotein,HLA-C1402,0.897,WT_Delta
+GNYNYLYRLF,surface glycoprotein,HLA-A2301,0.4859,WT_Delta
+GNYNYLYRLF,surface glycoprotein,HLA-A2402,0.4794,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0302,1.5216,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A1101,0.9694,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3101,0.8558,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3303,0.288,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A6801,0.0942,WT_Delta
+HTTDPSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A7401,0.8594,WT_Delta
+HTTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.0409,WT_Delta
+HTTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,0.5633,WT_Delta
+HTTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2601,0.1713,WT_Delta
+HTTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.8782,WT_Delta
+HTTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3002,0.6227,WT_Delta
+HVSGTNGTK,surface glycoprotein,HLA-A0301,1.2604,WT_Delta
+HVSGTNGTK,surface glycoprotein,HLA-A0302,1.7347,WT_Delta
+HVSGTNGTK,surface glycoprotein,HLA-A1101,1.8934,WT_Delta
+HVSGTNGTK,surface glycoprotein,HLA-A6801,0.6602,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B1501,1.6113,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5101,1.618,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5201,1.5639,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5301,1.6804,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5701,1.5762,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5801,1.327,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-B5802,1.4873,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C0202,0.813,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C0210,0.813,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C0302,1.3371,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C0303,1.6882,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C0304,1.6882,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C1202,0.9507,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C1203,1.5392,WT_Delta
+IAMACLVGLM,membrane glycoprotein,HLA-C1601,1.5709,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A0101,1.2033,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A0302,1.851,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A2902,0.43120000000000003,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A3002,0.0289,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A3201,1.2114,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-A7401,1.6778,WT_Delta
+KVGGNYNYLY,surface glycoprotein,HLA-B5802,1.8886,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,0.2107,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.2624,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,1.505,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3201,1.0763,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5301,0.255,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5701,0.5451,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5801,0.3289,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5802,0.3337,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,1.8655,WT_Delta
+MFTPLVPFW,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,1.6932,WT_Delta
+NLTTRTQL,surface glycoprotein,HLA-B0801,0.6593,WT_Delta
+NYLYRLFRK,surface glycoprotein,HLA-A3101,0.8073,WT_Delta
+NYLYRLFRK,surface glycoprotein,HLA-A3303,0.6343,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-A2301,0.0715,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-A2402,0.0473,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-A2902,1.1314,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-B1801,1.654,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-C0602,0.6127,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-C0701,0.3041,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-C0702,0.0637,WT_Delta
+NYNYLYRLF,surface glycoprotein,HLA-C1402,0.2137,WT_Delta
+NYNYLYRLFRK,surface glycoprotein,HLA-A3303,1.8955,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-A0301,0.1639,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-A0302,0.4705,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-A1101,1.4192,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-A3001,0.4589,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-A7401,1.5227,WT_Delta
+QLRARSVSPK,ORF7a protein,HLA-B2705,1.3512,WT_Delta
+QTNSPRRAR,surface glycoprotein,HLA-A3101,0.3145,WT_Delta
+QTNSPRRAR,surface glycoprotein,HLA-A3303,0.2258,WT_Delta
+QTNSPRRAR,surface glycoprotein,HLA-A6801,0.9555,WT_Delta
+QTNSPRRAR,surface glycoprotein,HLA-A7401,1.3039,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-A3001,0.0461,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-A3201,1.5502,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-B0702,0.1541,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-B4201,0.387,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-B5201,1.3465,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-B5701,1.3307,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-B5802,0.8979,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0102,1.3987,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0202,1.1033,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0210,1.1033,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0302,1.3455,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0303,0.8347,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0304,0.8347,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0602,1.3028,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C0701,0.8916,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C1202,1.2144,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C1203,0.6567,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C1502,0.3855,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C1601,0.4038,WT_Delta
+RARSVSPKL,ORF7a protein,HLA-C1701,1.0744,WT_Delta
+RARSVSPKLFIR,ORF7a protein,HLA-A3001,1.3006,WT_Delta
+RARSVSPKLFIR,ORF7a protein,HLA-A3101,0.24,WT_Delta
+RARSVSPKLFIR,ORF7a protein,HLA-A7401,0.5527,WT_Delta
+SPRRARSV,surface glycoprotein,HLA-B0702,0.0926,WT_Delta
+SPRRARSV,surface glycoprotein,HLA-B0801,0.5533,WT_Delta
+SPRRARSV,surface glycoprotein,HLA-B4201,0.1948,WT_Delta
+SPRRARSVA,surface glycoprotein,HLA-B0702,0.0088,WT_Delta
+SPRRARSVA,surface glycoprotein,HLA-B0801,0.486,WT_Delta
+SPRRARSVA,surface glycoprotein,HLA-B4201,0.0234,WT_Delta
+SSRGTSPAR,nucleocapsid phosphoprotein,HLA-A3001,0.1991,WT_Delta
+SSRGTSPAR,nucleocapsid phosphoprotein,HLA-A3101,0.2811,WT_Delta
+SSRGTSPAR,nucleocapsid phosphoprotein,HLA-A3303,0.4757,WT_Delta
+SSRGTSPAR,nucleocapsid phosphoprotein,HLA-A6801,1.3902,WT_Delta
+SSRGTSPAR,nucleocapsid phosphoprotein,HLA-A7401,1.0188,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-A2501,0.1761,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-A2601,0.2796,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-A3201,0.3246,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B1501,0.6925,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B1503,0.8794,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B3501,1.5702,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B5701,1.7207,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B5801,1.392,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-B5802,0.6044,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0102,1.4717,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0202,0.2336,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0210,0.2336,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0302,0.1396,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0303,0.3721,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0304,0.3721,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0701,1.4572,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0801,1.4222,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C0802,1.9821,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1202,0.3955,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1203,0.5099,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1402,1.1695,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1502,1.2791,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1601,0.2891,WT_Delta
+STVFPPTSF,ORF1ab polyprotein,HLA-C1701,1.2144,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A0301,1.9228,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A0302,0.876,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A1101,0.4409,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A3101,0.1413,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A3303,0.1528,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A6801,0.3633,WT_Delta
+SVSPKLFIR,ORF7a protein,HLA-A7401,0.1081,WT_Delta
+SYQTQTNSPR,surface glycoprotein,HLA-A3101,0.5593,WT_Delta
+SYQTQTNSPR,surface glycoprotein,HLA-A3303,0.5557,WT_Delta
+TQTNSPRRAR,surface glycoprotein,HLA-A3101,1.0681,WT_Delta
+TQTNSPRRAR,surface glycoprotein,HLA-A3303,0.7511,WT_Delta
+TQTNSPRRAR,surface glycoprotein,HLA-A6801,1.647,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.0076,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,0.3869,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2601,0.0971,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.7236,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3002,0.3208,WT_Delta
+TTDPSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0501,1.5018,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.0971,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-B0702,1.5702,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4201,1.5673,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0401,1.5595,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0501,0.2328,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0801,1.1062,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0802,0.4279,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1502,1.7413,WT_Delta
+TTDPSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1701,1.7324,WT_Delta
+VGGNYNYLY,surface glycoprotein,HLA-A0101,1.0086,WT_Delta
+VGGNYNYLY,surface glycoprotein,HLA-A2902,0.4114,WT_Delta
+VGGNYNYLY,surface glycoprotein,HLA-A3002,0.1134,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,1.9321,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.4152,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1503,1.8104,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1801,0.1753,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3501,0.0087,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3503,0.2861,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4201,1.3246,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5101,1.2564,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5301,0.1027,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0302,1.6326,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1202,1.6261,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1203,1.4254,WT_Delta
+VPFWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1601,1.9317,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A0302,1.8953,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A1101,1.8143,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A3101,0.1159,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A3303,0.0548,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A6801,0.3826,WT_Delta
+YNYLYRLFR,surface glycoprotein,HLA-A7401,0.4906,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-A0101,1.3738,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-A0201,0.8844,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-A0202,1.695,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-A0206,0.2359,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-A0211,1.3556,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-B3801,0.608,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-B4001,1.7726,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-B5001,1.8956,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C0102,1.4504,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C0401,0.0996,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C0501,0.0716,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C0801,0.0956,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C0802,0.045,WT_Delta
+YQDVNCTEV,surface glycoprotein,HLA-C1701,0.7395,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,0.1124,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.0781,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,1.1817,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1503,1.0487,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3501,0.9312,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3801,1.6635,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0102,1.7222,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0302,1.1487,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0401,0.2631,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0602,0.9186,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0701,0.291,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,0.0186,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1202,1.9404,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1203,1.7059,WT_Delta
+YYHTTDPSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,0.0088,WT_Delta
+ATAMACLVGL,membrane glycoprotein,HLA-A0206,0.6863,MT_Delta
+ATAMACLVGL,membrane glycoprotein,HLA-A6802,1.119,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,0.4472,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.4357,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1501,1.9959,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1503,0.3381,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1801,0.0773,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4001,0.701,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4002,0.6138,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4006,1.9745,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4402,1.1003,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4403,0.8371,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5001,1.2049,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5201,1.7295,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,0.6806,MT_Delta
+FEYYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,0.4552,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B0702,0.0191,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B0801,0.2172,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B1402,0.1769,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B3501,0.0465,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B3503,0.0077,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B3801,1.497,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B4201,0.0104,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B5101,0.0685,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-B5301,0.1701,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0102,1.2698,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0302,1.0799,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0303,0.4407,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0304,0.4407,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0401,0.5432,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0801,0.3995,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C0802,1.3782,MT_Delta
+FPLTSFGPL,ORF1ab polyprotein,HLA-C1402,1.0063,MT_Delta
+GNYNYRYRLF,surface glycoprotein,HLA-A2301,1.5427,MT_Delta
+GNYNYRYRLF,surface glycoprotein,HLA-A2402,1.3191,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0302,1.5867,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A1101,1.1266,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3101,0.6751,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3303,0.1617,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A6801,0.0442,MT_Delta
+HTTDLSFLGR,ORF1ab polyprotein/ORF1a polyprotein,HLA-A7401,0.7138,MT_Delta
+HTTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.057,MT_Delta
+HTTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,0.8474,MT_Delta
+HTTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2601,0.2098,MT_Delta
+HTTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.3663,MT_Delta
+HTTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3002,0.3586,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-A2501,1.3032,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-A2601,0.9595,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-A6802,1.9422,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-B3501,1.8173,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-B3503,1.6519,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-B5301,1.4968,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-C0202,0.9491,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-C0210,0.9491,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-C0302,1.9107,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-C1202,1.1629,MT_Delta
+TAMACLVGLM,membrane glycoprotein,HLA-C1203,1.9223,MT_Delta
+KVGGNYNYRY,surface glycoprotein,HLA-A2902,1.0698,MT_Delta
+KVGGNYNYRY,surface glycoprotein,HLA-A3002,0.0597,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,0.2786,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.3246,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,1.6726,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3201,0.6842,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5301,0.2397,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5701,0.6189,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5801,0.3831,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5802,0.4364,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,1.5644,MT_Delta
+MFTPLVPSW,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,0.93,MT_Delta
+NLRTRTQL,surface glycoprotein,HLA-B0801,0.0297,MT_Delta
+NYRYRLFRK,surface glycoprotein,HLA-A3001,0.363,MT_Delta
+NYRYRLFRK,surface glycoprotein,HLA-A3101,0.6142,MT_Delta
+NYRYRLFRK,surface glycoprotein,HLA-A3303,0.7503,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-A2301,0.364,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-A2402,0.2151,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-C0602,0.5532,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-C0701,0.2715,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-C0702,0.0674,MT_Delta
+NYNYRYRLF,surface glycoprotein,HLA-C1402,0.2052,MT_Delta
+QLRARSASPK,ORF7a protein,HLA-A0301,0.2226,MT_Delta
+QLRARSASPK,ORF7a protein,HLA-A0302,0.6167,MT_Delta
+QLRARSASPK,ORF7a protein,HLA-A1101,1.9056,MT_Delta
+QLRARSASPK,ORF7a protein,HLA-A3001,0.6551,MT_Delta
+QLRARSASPK,ORF7a protein,HLA-B2705,1.7645,MT_Delta
+QTNSRRRAR,surface glycoprotein,HLA-A3101,0.51,MT_Delta
+QTNSRRRAR,surface glycoprotein,HLA-A3303,0.4283,MT_Delta
+RARSASPKL,ORF7a protein,HLA-A3001,0.0414,MT_Delta
+RARSASPKL,ORF7a protein,HLA-B0702,0.1192,MT_Delta
+RARSASPKL,ORF7a protein,HLA-B4201,0.4169,MT_Delta
+RARSASPKL,ORF7a protein,HLA-B5201,1.4657,MT_Delta
+RARSASPKL,ORF7a protein,HLA-B5701,1.7786,MT_Delta
+RARSASPKL,ORF7a protein,HLA-B5802,0.9934,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0102,0.8961,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0202,1.3936,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0210,1.3936,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0302,1.1508,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0303,0.638,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0304,0.638,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0401,1.5962,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0602,1.7294,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0701,1.1536,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C0801,1.9036,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1202,1.3072,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1203,0.7633,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1402,1.8385,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1502,0.472,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1601,0.3818,MT_Delta
+RARSASPKL,ORF7a protein,HLA-C1701,1.2442,MT_Delta
+RARSASPKLFIR,ORF7a protein,HLA-A3001,1.0928,MT_Delta
+RARSASPKLFIR,ORF7a protein,HLA-A3101,0.333,MT_Delta
+RARSASPKLFIR,ORF7a protein,HLA-A7401,1.5466,MT_Delta
+SRRRARSV,surface glycoprotein,HLA-B0801,1.5866,MT_Delta
+SRRRARSV,surface glycoprotein,HLA-C0602,1.6399,MT_Delta
+SRRRARSVA,surface glycoprotein,HLA-B0801,1.9968,MT_Delta
+SRRRARSVA,surface glycoprotein,HLA-B1402,1.0961,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A0301,1.9805,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A0302,0.9441,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A1101,0.3042,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A3001,1.6002,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A3101,0.3245,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A3303,0.2716,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A6801,0.2874,MT_Delta
+SSMGTSPAR,nucleocapsid phosphoprotein,HLA-A7401,0.4161,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-A2501,0.0332,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-A2601,0.0491,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-A3201,0.1276,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B1501,0.2679,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B1503,0.7201,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B3501,1.4803,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B5701,0.9558,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B5801,0.9865,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-B5802,0.4254,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0102,1.7489,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0202,0.1807,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0210,0.1807,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0302,0.1335,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0303,0.4665,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0304,0.4665,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C0801,1.7117,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1202,0.2807,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1203,0.4699,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1402,1.3565,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1502,1.3573,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1601,0.4441,MT_Delta
+STVFPLTSF,ORF1ab polyprotein,HLA-C1701,1.4371,MT_Delta
+SASPKLFIR,ORF7a protein,HLA-A1101,1.4737,MT_Delta
+SASPKLFIR,ORF7a protein,HLA-A3101,0.3138,MT_Delta
+SASPKLFIR,ORF7a protein,HLA-A3303,0.3127,MT_Delta
+SASPKLFIR,ORF7a protein,HLA-A6801,0.5803,MT_Delta
+SASPKLFIR,ORF7a protein,HLA-A7401,0.6177,MT_Delta
+SYQTQTNSRR,surface glycoprotein,HLA-A3101,1.1118,MT_Delta
+SYQTQTNSRR,surface glycoprotein,HLA-A3303,1.0225,MT_Delta
+TQTNSRRRAR,surface glycoprotein,HLA-A3101,1.68,MT_Delta
+TQTNSRRRAR,surface glycoprotein,HLA-A3303,1.3794,MT_Delta
+TTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.0078,MT_Delta
+TTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,1.1482,MT_Delta
+TTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2601,0.2523,MT_Delta
+TTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.5269,MT_Delta
+TTDLSFLGRY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3002,0.137,MT_Delta
+TTDLSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,0.1575,MT_Delta
+TTDLSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0501,0.6891,MT_Delta
+TTDLSFLGRYM,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0802,1.0008,MT_Delta
+VGGNYNYRY,surface glycoprotein,HLA-A2902,1.0855,MT_Delta
+VGGNYNYRY,surface glycoprotein,HLA-A3002,0.2882,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A0101,1.7431,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2501,1.5209,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2601,1.8408,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.4919,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-A3002,1.7274,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B0702,1.2174,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1801,0.2439,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3501,0.0072,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3503,0.1982,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B4201,0.9768,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5101,1.8147,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5301,0.0401,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0302,1.4837,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0401,1.5292,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1202,1.4114,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1203,1.6566,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,1.7981,MT_Delta
+VPSWITIAY,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1601,1.1116,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A0302,1.655,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A1101,1.793,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A3101,0.0709,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A3303,0.0537,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A6801,0.4514,MT_Delta
+YNYRYRLFR,surface glycoprotein,HLA-A7401,0.4039,MT_Delta
+YQGVNCTEV,surface glycoprotein,HLA-A0206,0.7029,MT_Delta
+YQGVNCTEV,surface glycoprotein,HLA-C0401,1.9623,MT_Delta
+YQGVNCTEV,surface glycoprotein,HLA-C0801,1.748,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2301,0.0326,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2402,0.021,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-A2902,0.4854,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1402,1.5602,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1503,0.5489,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B1801,1.4151,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3501,0.6987,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B3801,1.1738,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-B5301,1.5687,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0102,1.7625,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0302,0.6665,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0303,1.8197,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0304,1.8197,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0401,0.1436,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0602,0.5634,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0701,0.1434,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C0702,0.009,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1202,0.9809,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1203,1.0703,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1402,0.0075,MT_Delta
+YYHTTDLSF,ORF1ab polyprotein/ORF1a polyprotein,HLA-C1601,1.3187,MT_Delta

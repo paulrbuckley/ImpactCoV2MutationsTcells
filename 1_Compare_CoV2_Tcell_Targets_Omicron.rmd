@@ -30,13 +30,10 @@ ClosestMatch2 = function(string, stringVector){
 
 ```
 
-## Aims
-Question: - What Wuhan Hu-1 SARS-CoV2 T cell targets are mutated in Omicron?
-
 # Gather data
 
 - Gather a comprehensive dataset of immunogenic CoV2 peptides
-- As of Dec 2021. By then, most of Wuhan proteome had been scanned for immunogenic CD8+ T cell targets
+
 ## IEDB + VIPR
 
 ```{r}
@@ -114,6 +111,8 @@ WUHAN_COV2_Ep_Coverage=WUHAN_COV2_Ep_Coverage %>% inner_join(PROT_IDS)
 
 ```
 
+## stats
+
 ```{r}
 WUHAN_COV2_Ep_Coverage%>% select(Peptide) %>% distinct()%>% nrow
 WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% nrow
@@ -124,16 +123,15 @@ WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% nrow
 
 
 ```{r,dpi=300}
-
+# Read SARS2 sequence into a DT
 CORONAVIRUSSEQS = fread("DATA/Coronavirus_sequences_Full_DT.txt")%>% filter(Virus %in% 'SARS-CoV-2-Wuhan')
 CORONAVIRUSSEQS=CORONAVIRUSSEQS %>% mutate(Length = nchar(`Seq.V1`)) %>% select(!c(Virus, `Seq.V1`))
 
 ```
 
 
-# Map epitopes to the above regions of Omicron
+# Map Wuhan epitopes to the above regions of Omicron
 ## Import variant (Omicron) proteome
-
 
 ```{r}
 # Deal w/ proteinIDs which may differ between RefSeq (Wuhan) and Variant (Omicron)
@@ -153,7 +151,7 @@ WUHAN_COV2_Ep_Coverage=WUHAN_COV2_Ep_Coverage %>% inner_join(Variant_ProteinIDs)
 
 
 ## Perform a local global to entire Variant
-- For each epitope of interest, scan the mutant proteome to see if we find epitope or a mutant.
+- For each epitope of interest, scan the mutant proteome to see if we find epitope match or a mutant.
 -
 ```{r}
 # DT mapping vartiant protein name and variant protein id.
@@ -162,7 +160,7 @@ VARIANT_PROTEINS = WUHAN_COV2_Ep_Coverage %>% select(Protein, VariantProteinID) 
 cores=detectCores()
 cl <- makeCluster(cores[1]-1) #not to overload your computer
 registerDoParallel(cl)
-# Nested foreach: for each epitope, run throiugh each variant protein sequence.
+# Nested foreach: for each epitope, run through each variant protein sequence.
 Mutations_Epitopes = foreach(i = 1:nrow(WUHAN_COV2_Ep_Coverage),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings")) %:%
 foreach(ii = 1:length(Variant_StringSet),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%dopar% {
 
@@ -181,7 +179,7 @@ foreach(ii = 1:length(Variant_StringSet),.combine = rbind, .packages = c("dplyr"
 }
 
 stopCluster(cl)
-# Take the highest match score for each peptide. This is their match in the proteome.
+# Take the highest match score for each peptide. This is their match in the variant proteome.
 Mutations_Epitopes = Mutations_Epitopes%>% distinct() %>% group_by(Peptide) %>% slice_max(score, with_ties = TRUE)%>% ungroup
 
 Mutations_Epitopes=Mutations_Epitopes %>% dplyr::rename(Protein=TestedProtein) %>% select(Peptide, VariantAlignment, VariantProteinID, Protein,start_match)
@@ -203,7 +201,7 @@ MutationData_Wuhan_vs_Variant=WUHAN_COV2_Ep_Coverage %>% inner_join(Mutations_Ep
 
 
 ```{r}
-# Get rid of epitopes with H0, i.e, identical WT-MT
+# Get rid of epitopes with Hamming = 0, i.e, identical WT-MT
 MUTATIONDATA=MutationData_Wuhan_vs_Variant %>% filter(! Hamming==0)
 MUTATIONDATA=MUTATIONDATA %>% mutate(ProportionMutated = Hamming/nchar(Peptide))
 # Function to calculate the position of the mutation
@@ -215,28 +213,20 @@ calculateMutation_position_V2 <- function(str1, str2,start_pos) {
   str1=as.character(aligned(pattern(alignment)))
   str2=as.character(aligned(subject(alignment)))
 
-
-
   str1vec <- unlist(strsplit(str1, ""))
   str2vec <- unlist(strsplit(str2, ""))
   iMut <- (1:length(str1vec))[str1vec != str2vec]
   MUTPOS = (start_pos-1)+iMut
   return(paste0(MUTPOS))
 }
-
+# Test the function crudely
 calculateMutation_position_V2("SSRGTSPAR","SSKRTSPAR",201)
-
-
 
 ```
 
 
-
-
-
-
 ```{r}
-# Calculate mutation positions for each found mutant between wuhan and Omicron BA1
+# Calculate mutation positions for each found mutant between Wuhan and Omicron BA1
 MUTATIONS = foreach(i = 1:nrow(MUTATIONDATA),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%do% {
 
   mutations = paste0(calculateMutation_position_V2(MUTATIONDATA$Peptide[i],MUTATIONDATA$VariantAlignment[i],MUTATIONDATA$start_pos[i]),collapse = ",")
@@ -250,7 +240,7 @@ MUTATIONS = foreach(i = 1:nrow(MUTATIONDATA),.combine = rbind, .packages = c("dp
 
 #Below line 'assumes' that mutatations in ORF1a AND ORF1AB, in the same position, with same peptide, are the same mutation, thus are joined to be ORF1AB/ORF1a
 MUTATIONS=MUTATIONS %>% group_by(Peptide,VariantAlignment,start_pos,MutationPos) %>% dplyr::summarise(Protein = sort(paste0(Protein,collapse = "/")))
-# Read in known SNPs to validate our findings. NAs are retained as they remain observed mutants. Future versions may seek to understand the NAs in more detail
+# Read in known SNPs to validate our findings. NAs are retained as they remain observed mutants.
 MUTATION_LIST= fread("OMICRON_SNPS.csv")
 MUTATION_LIST=MUTATION_LIST %>% mutate(MutationPos = parse_number(Mutation))
 # Clean the data
@@ -278,7 +268,7 @@ MUTATIONS=MUTATIONS %>% mutate(Hamming = stringdist::stringdist(Peptide,VariantA
 # How many unique peptides with mutations
 MUTATIONS %>% nrow
 
-# Summarise the pep list, so group same positions of orf1a/orf1ab
+# Summarise the peptide list, so group same positions of orf1a/orf1ab
 SUMMARISED_WUHAN_PEPLIST=WUHAN_COV2_Ep_Coverage %>% select(Peptide,start_pos,end_pos,Protein,names)%>% group_by(Peptide,start_pos,end_pos) %>% dplyr::summarise(Protein = sort(paste0(Protein, collapse = "/")))%>% ungroup
 #check no idiosyncracies. Looks good
 SUMMARISED_WUHAN_PEPLIST %>% select(Protein) %>% unique
@@ -295,6 +285,7 @@ MissingPeps=setdiff(FullDataset$Peptide,WUHAN_COV2_Ep_Coverage$Peptide)
 ```
 
 # Compile Antigen Presentation data table
+- For WT and MT, read in netMHCPAN predictions against 64 HLA-I alleles
 ## WT wuhan peptides
 
 - DONE! - run stabpan and netmhcpan BA

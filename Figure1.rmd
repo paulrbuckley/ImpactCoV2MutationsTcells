@@ -35,104 +35,149 @@ WUHAN_COV2_Ep_Coverage=readRDS(file="WUHAN_COV2_Ep_Coverage.rds")
 WUHAN_COV2_Ep_Coverage %>% select(Peptide) %>% distinct %>% mutate(Length = nchar(Peptide)) %>% group_by(Length) %>% dplyr::summarise(n=n())%>%arrange(desc(n))%>% mutate(Length = as.character(Length))%>%
         mutate(Freq=n/1380)%>% DT::datatable()
 
-WUHAN_LENGTHS_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide) %>% distinct %>% mutate(Length = nchar(Peptide)) %>% group_by(Length) %>% dplyr::summarise(n=n())%>%arrange(desc(n))%>% mutate(Length = as.character(Length))%>%
-  ggbarplot(x="Length",y="n",fill="darkgrey")+ylab("# SARS-CoV-2 Peptides\nto Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()
-
-
-ORIGIN_PROTEIN_NUM_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>% dplyr::summarise(n=n())%>% arrange(desc(n)) %>%
-  ggbarplot(x="Protein",y="n",fill="darkgrey")+ylab("# SARS-CoV-2 Peptides\nto Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()
-
+# Distribution of lengths per wuhan peptide
+WUHAN_LENGTHS_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide) %>% distinct %>% mutate(Length = nchar(Peptide)) %>%
+         group_by(Length) %>% dplyr::summarise(n=n())%>%arrange(desc(n))%>%
+          mutate(Length = as.character(Length))%>%
+  ggbarplot(x="Length",y="n",fill="darkgrey")+ylab("# SARS-CoV-2 Peptides\nto Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()+
+  theme(legend.text = element_text(size=18))+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
+# Distribution of origin proteins for wuhan CD8+T targets
+ORIGIN_PROTEIN_NUM_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>%
+        dplyr::summarise(n=n())%>% arrange(desc(n)) %>%
+  ggbarplot(x="Protein",y="n",fill="darkgrey")+ylab("# SARS-CoV-2 Peptides\nto Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
 CORONAVIRUSSEQS = fread("DATA/Coronavirus_sequences_Full_DT.txt")%>% filter(Virus %in% 'SARS-CoV-2-Wuhan')
 CORONAVIRUSSEQS=CORONAVIRUSSEQS %>% mutate(Length = nchar(`Seq.V1`)) %>% select(!c(Virus, `Seq.V1`))
-
-
-ORIGIN_PROTEIN_FREQ_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>% dplyr::summarise(n=n())%>% inner_join(CORONAVIRUSSEQS) %>% mutate(FreqPerAA = n/Length)%>% arrange(desc(FreqPerAA))%>%
-   ggbarplot(x="Protein",y="FreqPerAA",fill="darkgrey")+ylab("Freq SARS-CoV-2 Peptides\nper Length Protein to Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()
+# Distr of protein source but normalised by length of protein
+ORIGIN_PROTEIN_FREQ_PLT=WUHAN_COV2_Ep_Coverage %>% select(Peptide, Protein) %>% distinct() %>% group_by(Protein) %>%
+        dplyr::summarise(n=n())%>% inner_join(CORONAVIRUSSEQS) %>% mutate(FreqPerAA = n/Length)%>% arrange(desc(FreqPerAA))%>%
+   ggbarplot(x="Protein",y="FreqPerAA",fill="darkgrey")+ylab("Freq SARS-CoV-2 Peptides\nper Length Protein to Wuhan-Hu-1")+theme_pubr(base_size = 18)+coord_flip()+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
 
 ```
 
 
 ```{r}
+
 WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
-
-
-WUHAN_HLAS_PLT=WUHAN_PEPTIDES_BINDING_SCORES %>% select(Peptide,Predicted_Binding, Binder)%>% distinct() %>% separate_rows_(cols=c("Predicted_Binding","Binder"),sep=",")%>% select(!Peptide) %>%
-  group_by(Predicted_Binding, Binder)%>% dplyr::summarise(n=n())%>% ungroup %>%tidyr::complete(Predicted_Binding,Binder, fill = list(n=0))%>% filter(Binder == "BINDER") %>% arrange(desc(n))%>%
-         mutate(Predicted_Binding = gsub("HLA-","",Predicted_Binding))%>%
-  ggbarplot(x="Predicted_Binding",y="n",fill="darkgrey")+theme_pubr(base_size = 18)+ylab("Num. SARS-CoV-2 Peptides\n predicted to bind")+xlab("HLA Allele")+rotate_x_text()
-
+# Plot showing how many Wuhan targets 64 HLAs are predicted to bind
+WUHAN_HLAS_PLT=WUHAN_PEPTIDES_BINDING_SCORES %>% select(Peptide,Predicted_Binding, Binder)%>% distinct() %>%
+        separate_rows_(cols=c("Predicted_Binding","Binder"),sep=",")%>% select(!Peptide) %>% # one row per HLA-WT peptide
+        group_by(Predicted_Binding, Binder)%>% dplyr::summarise(n=n())%>% ungroup %>% # Count observations of binders vs nonbinders
+        tidyr::complete(Predicted_Binding,Binder, fill = list(n=0))%>% filter(Binder == "BINDER") %>% # fill in any missing observations with 0, filter for binders
+        arrange(desc(n))%>%
+        mutate(Predicted_Binding = gsub("HLA-","",Predicted_Binding))%>% # Clean HLA for plotting
+        ggbarplot(x="Predicted_Binding",y="n",fill="darkgrey")+theme_pubr(base_size = 18)+
+        ylab("Num. SARS-CoV-2 Peptides\n predicted to bind")+xlab("HLA Allele")+rotate_x_text()+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
 ```
 
 
 ```{r}
+
 MUTATIONS=readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
 
 ```
 
 
-# Mutation statoistics V2: inc subvar
+# B-D
 
 ```{r}
 
 MUTATIONS_BA1 = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")%>% mutate(Variant = "BA1")
 MUTATIONS_SUBVAR=readRDS("OMICRON_EPITOPE_MUTATIONS_SUBVAR.rds")
-MUTATIONS_FULL=MUTATIONS_BA1 %>% rbind(MUTATIONS_SUBVAR)%>% distinct()
-NUM_MUT_PLT=MUTATIONS_FULL%>% distinct() %>% group_by(Variant)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/1380)%>%
-    arrange(desc(n))%>% ggplot(aes(x=reorder(Variant,-n),y=n))+geom_bar(stat="identity",fill="#999999",color="black")+ylab("Number of Peptides")+theme_pubr(base_size = 18)+xlab("")+
-  geom_text(aes(label=round(Freq,digits=3)), nudge_y = 3.5, size=5)
+MUTATIONS_FULL=MUTATIONS_BA1 %>% rbind(MUTATIONS_SUBVAR)%>% distinct() # Create DT of wuhan epitopes with mutations in BA1, 2, 4, 5
 
+# Plot showing number of mutations in each variant in CD8T epitope positions relative to Wuhan
+NUM_MUT_PLT=MUTATIONS_FULL%>% distinct() %>% group_by(Variant)%>% dplyr::summarise(n=n())%>% # count number of observations (mutations) per variant
+        mutate(Freq=n/1380)%>% arrange(desc(n))%>% # Freq = n/total # of cd8t epitopes from wuhan
+        ggplot(aes(x=reorder(Variant,-n),y=n))+geom_bar(stat="identity",fill="#999999",color="black")+
+        ylab("Number of Peptides")+theme_pubr(base_size = 18)+xlab("")+
+        geom_text(aes(label=round(Freq,digits=3)), nudge_y = 3.5, size=5)+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
-
-MUTATIONS_FULL%>% distinct() %>% group_by(Variant)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/1380)%>%
-    arrange(desc(n)) %>% DT::datatable()
-
-NUM_MUT_PUM_PEPS_PLT=MUTATIONS_FULL%>%select(Peptide,MutationPos,Variant) %>% separate_rows_(cols = "MutationPos",sep=",")%>% group_by(Peptide,Variant)%>% dplyr::summarise(NMUT = n_distinct(MutationPos))%>%ungroup %>%
-        select(NMUT,Variant)%>% group_by(NMUT,Variant) %>% dplyr::summarise(n=n())%>%mutate(Freq=n/sum(n)) %>% ggbarplot(x="NMUT",y="n",fill="darkgrey")+facet_grid(~Variant)+theme_pubr(base_size = 18)+ylab("Number of Peptides")+xlab("Number of Mutations")
-
-
+# Plot showing the number of wuhan peptides, with X number of mutations in the sequence, across variants
+NUM_MUT_PUM_PEPS_PLT=MUTATIONS_FULL%>%select(Peptide,MutationPos,Variant) %>%
+        separate_rows_(cols = "MutationPos",sep=",")%>% group_by(Peptide,Variant)%>%
+        dplyr::summarise(NMUT = n_distinct(MutationPos))%>%ungroup %>%
+        select(NMUT,Variant)%>% group_by(NMUT,Variant) %>%
+        dplyr::summarise(n=n())%>%mutate(Freq=n/sum(n)) %>%
+        ggbarplot(x="NMUT",y="n",fill="darkgrey")+facet_grid(~Variant)+
+        theme_pubr(base_size = 18)+ylab("Number of Peptides")+xlab("Number of Mutations")+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
+#Table1
 MUTATIONS_FULL%>%select(Peptide,MutationPos,Variant) %>% separate_rows_(cols = "MutationPos",sep=",")%>% group_by(Peptide,Variant)%>% dplyr::summarise(NMUT = n_distinct(MutationPos))%>%ungroup %>%
        select(NMUT,Variant)%>% group_by(NMUT,Variant) %>% dplyr::summarise(n=n())%>%
        dplyr::rename("# Mutations"=NMUT, "# Obs" = n)%>%
-        readr::write_csv(file="/Users/paulbuckley/Library/CloudStorage/OneDrive-SharedLibraries-Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V9/WORKING_VERSION/Main_Tables/Table1.csv")
+        readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/SUBMITTED/R_R/Table1.csv")
 
+# Give ORF1AB/A the same name. ORF1AB contains A
 MUTATIONS_FULL[MUTATIONS_FULL$Protein =="ORF1ab polyprotein",]$Protein = "ORF1ab polyprotein/ORF1a polyprotein"
 
-PROTEIN_MUT_DATA=MUTATIONS_FULL %>% select(Peptide,VariantAlignment,Protein,MutationPos,Variant) %>% distinct() %>% group_by(Protein,Variant)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%arrange(desc(n))
-PROTEIN_MUT_DATA=PROTEIN_MUT_DATA %>% mutate(Protein=gsub(" |glycoprotein|phosphoprotein|polyprotein|protein","",Protein))%>% ungroup()
-  NUM_PROT_PLT=PROTEIN_MUT_DATA%>%
-  ggbarplot(x="Protein",y="n",fill="darkgrey")+facet_grid(~Variant)+theme_pubr(base_size = 18)+ylab("Number of Peptides")+coord_flip()
+# Count number of peptides with mutations which originate in each protein.
+PROTEIN_MUT_DATA=MUTATIONS_FULL %>% select(Peptide,VariantAlignment,Protein,MutationPos,Variant) %>%
+         distinct() %>% # Distinct ensures no duplicate observations (e.g., from ORF1A and AB)
+         group_by(Protein,Variant)%>% dplyr::summarise(n=n())%>% mutate(Freq=n/sum(n))%>%arrange(desc(n))
+
+PROTEIN_MUT_DATA=PROTEIN_MUT_DATA %>%
+        mutate(Protein=gsub(" |glycoprotein|phosphoprotein|polyprotein|protein","",Protein))%>% # clean names for plotting
+        ungroup()
+
+NUM_PROT_PLT=PROTEIN_MUT_DATA%>%
+  ggbarplot(x="Protein",y="n",fill="darkgrey")+facet_grid(~Variant)+theme_pubr(base_size = 18)+ylab("Number of Peptides")+coord_flip()+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
 
 ```
 
 
 
-
-# V2
-
+# 1E
 
 ```{r,dpi=300,fig.height=7, fig.width = 8}
-
-AA_CHANGES_PLT=MUTATIONS_FULL %>% separate_rows_(cols = c("MutationPos", "Mutation"),sep=",") %>%mutate(MutationPos=as.numeric(MutationPos))%>% mutate(SeqMutationPos = ((MutationPos-start_pos)+1) )%>%
-        mutate(ChangeFrom = stringr::str_sub(Mutation, 1,1))%>% mutate(ChangeTo = stringr::str_sub(Mutation, -1,-1))%>% mutate(Length = nchar(Peptide))%>%
-        mutate(SeqChange = paste0(ChangeFrom,"_",ChangeTo))%>%group_by(SeqChange, SeqMutationPos, Length, Variant)%>% dplyr::summarise(n=n())%>%filter(Length %in% c(9,10))%>%
-        mutate(SeqMutationPos_chr = as.character(SeqMutationPos))%>% filter(Length == 9)%>%mutate(Length = paste0("Length: ",Length))%>%
-        mutate(PROLINE = grepl("P_",SeqChange))%>%
-        ggplot(aes(y=SeqChange,x=reorder(SeqMutationPos_chr, SeqMutationPos), color=PROLINE))+geom_point(aes(size=3))+facet_wrap(~Length+Variant,scales="free",ncol=4)+theme_pubr(base_size = 18)+
+# Plotting the landscape of mutations in 9mer Wuhan peptides across voc subvariants
+AA_CHANGES_PLT=MUTATIONS_FULL %>% separate_rows_(cols = c("MutationPos", "Mutation"),sep=",") %>%
+        mutate(MutationPos=as.numeric(MutationPos))%>% mutate(SeqMutationPos = ((MutationPos-start_pos)+1) )%>% # Calculate position in seq where mutation is
+        mutate(ChangeFrom = stringr::str_sub(Mutation, 1,1))%>% #Find ChangeFrom, AA removed
+        mutate(ChangeTo = stringr::str_sub(Mutation, -1,-1))%>% # Find ChangeTo, the AA imputed in the variant
+        mutate(Length = nchar(Peptide))%>% # Length of the peptide
+        mutate(SeqChange = paste0(ChangeFrom,"_",ChangeTo))%>%#SeqChange then shows A_B, A is removed, B is imputed
+        group_by(SeqChange, SeqMutationPos, Length, Variant)%>%
+        dplyr::summarise(n=n())%>%filter(Length %in% c(9))%>% # Count number of observations by variant, of length X , in sequence positions 1..9
+        mutate(SeqMutationPos_chr = as.character(SeqMutationPos))%>%
+        mutate(Length = paste0("Length: ",Length))%>%
+        mutate(PROLINE = grepl("P_",SeqChange))%>% #label proline removals
+        ggplot(aes(y=SeqChange,x=reorder(SeqMutationPos_chr, SeqMutationPos), color=PROLINE))+
+        geom_point(aes(size=3))+facet_wrap(~Length+Variant,scales="free",ncol=4)+theme_pubr(base_size = 18)+
         ylab("Amino Acid Change")+xlab("Epitope Position")+grids()+
-        theme(axis.text.y=element_text(hjust=0.1,vjust=0.1))+theme(legend.position = "none")+scale_color_manual(values = c("#666666","#e34a33"))
+        theme(axis.text.y=element_text(hjust=0.1,vjust=0.1))+theme(legend.position = "none")+scale_color_manual(values = c("#666666","#e34a33"))+theme(legend.title = element_text(size=18))+
+       theme(strip.text.x = element_text(size = 18))+theme(axis.title.y = element_text(size = 18))+
+        theme(axis.title.x = element_text(size = 18))
 
-
-
-SUPP_AA_CHANGES_PLT=MUTATIONS_FULL %>% separate_rows_(cols = c("MutationPos", "Mutation"),sep=",") %>%mutate(MutationPos=as.numeric(MutationPos))%>% mutate(SeqMutationPos = ((MutationPos-start_pos)+1) )%>%
-        mutate(ChangeFrom = stringr::str_sub(Mutation, 1,1))%>% mutate(ChangeTo = stringr::str_sub(Mutation, -1,-1))%>% mutate(Length = nchar(Peptide))%>%
-        mutate(SeqChange = paste0(ChangeFrom,"_",ChangeTo))%>%group_by(SeqChange, SeqMutationPos, Length, Variant)%>% dplyr::summarise(n=n())%>%filter(Length %in% c(9,10))%>%
-        mutate(SeqMutationPos_chr = as.character(SeqMutationPos))%>% filter(Length == 10)%>%mutate(Length = paste0("Length: ",Length))%>%
+# Below is the same as above but for 10mers
+SUPP_AA_CHANGES_PLT=MUTATIONS_FULL %>% separate_rows_(cols = c("MutationPos", "Mutation"),sep=",") %>%
+        mutate(MutationPos=as.numeric(MutationPos))%>% mutate(SeqMutationPos = ((MutationPos-start_pos)+1) )%>%
+        mutate(ChangeFrom = stringr::str_sub(Mutation, 1,1))%>%
+        mutate(ChangeTo = stringr::str_sub(Mutation, -1,-1))%>%
+        mutate(Length = nchar(Peptide))%>%
+        mutate(SeqChange = paste0(ChangeFrom,"_",ChangeTo))%>%group_by(SeqChange, SeqMutationPos, Length, Variant)%>%
+        dplyr::summarise(n=n())%>%filter(Length %in% c(10))%>%
+        mutate(SeqMutationPos_chr = as.character(SeqMutationPos))%>% filter(Length == 10)%>%
+        mutate(Length = paste0("Length: ",Length))%>%
         mutate(PROLINE = grepl("P_",SeqChange))%>%
-        ggplot(aes(y=SeqChange,x=reorder(SeqMutationPos_chr, SeqMutationPos), color=PROLINE))+geom_point(aes(size=3))+facet_wrap(~Length+Variant,scales="free",ncol=4)+theme_pubr(base_size = 18)+
+        ggplot(aes(y=SeqChange,x=reorder(SeqMutationPos_chr, SeqMutationPos), color=PROLINE))+
+        geom_point(aes(size=3))+facet_wrap(~Length+Variant,scales="free",ncol=4)+theme_pubr(base_size = 18)+
         ylab("Amino Acid Change")+xlab("Epitope Position")+grids()+
         theme(axis.text.y=element_text(hjust=0.1,vjust=0.1))+theme(legend.position = "none")+scale_color_manual(values = c("#666666","#e34a33"))
 
@@ -140,18 +185,15 @@ SUPP_AA_CHANGES_PLT=MUTATIONS_FULL %>% separate_rows_(cols = c("MutationPos", "M
 
 
 ```
+
+
+# Create plots
 
 ```{r,dpi=300, fig.height = 6, fig.width = 20}
 A_C_GRID=cowplot::plot_grid(WUHAN_LENGTHS_PLT, ORIGIN_PROTEIN_NUM_PLT, ORIGIN_PROTEIN_FREQ_PLT,nrow=1,rel_widths = c(0.6,1.2,1.2), align="h")
 A_C_GRID
 ```
 
-```{,dpi=300, fig.height = 6, fig.width = 20}
-D_E_F_GRID=cowplot::plot_grid(NUM_MUT_PLT,Freq_MUT_PLT, NUM_MUT_PUM_PEPS_PLT,NUM_PROT_PLT,nrow=1,rel_widths = c(0.75,0.75,1.0,1.5), align="h")
-D_E_F_GRID
-```
-
-# GRID V2
 
 ```{r,dpi=300, fig.height = 6, fig.width = 20}
 D_E_F_GRID=cowplot::plot_grid(NUM_MUT_PLT, NUM_MUT_PUM_PEPS_PLT,NUM_PROT_PLT,nrow=1,rel_widths = c(0.55,0.8,1.65), align="h")
@@ -163,27 +205,17 @@ D_E_F_GRID
 ```{r}
 
 G_GRID=cowplot::plot_grid(AA_CHANGES_PLT, align="h")
-
-
 HLA_GRID = cowplot::plot_grid(WUHAN_HLAS_PLT, nrow=1)
 
 ```
 
 ```{r,dpi=300, fig.height = 12, fig.width = 20}
 
-#A_F_GRID=cowplot::plot_grid(A_C_GRID,D_E_F_GRID, align="hv", axis="bl",nrow=2)
-
 cowplot::plot_grid(D_E_F_GRID, G_GRID, nrow=2, align="v",axis="l", rel_heights = c(0.6,1.4))
 
 ```
 
 # SUPPLEMENTARY
-
-```{r,dpi=300, fig.height = 18, fig.width = 20}
-
-cowplot::plot_grid(A_C_GRID,SUPP_AA_CHANGES_PLT,nrow=3, rel_heights = c(0.8,0.8,1.4))
-```
-
 
 ```{r,dpi=300, fig.height = 7, fig.width = 20}
 A_GRID=cowplot::plot_grid(WUHAN_LENGTHS_PLT,nrow=1, align="h")

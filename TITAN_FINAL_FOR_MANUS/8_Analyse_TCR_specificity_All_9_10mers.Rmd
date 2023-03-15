@@ -1,0 +1,258 @@
+---
+title: "19_Analyse_TCR_specificity_All_9_10mers"
+author: "pbuckley"
+date: '2022-07-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+
+## Read in combinedData and stitchrcombined
+
+```{r}
+combinedData = fread("DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL.csv") # This is the combined data from all datasets.
+STITCHR_OUT_COMBINEDDATA = readRDS("DATASETS/STITCHR_COMBINEDDATA_OUT_PROCESSED.rds") # STICHR info
+
+```
+
+# Here we want to analyse the specificity of TCRs against all 9 and 10mers with Wuhan and Mutant epitopes.
+- ie, are omicron epitopes predicted to bind more TCRs than wuhan epitopes?
+-
+## Preprocess combined data
+
+```{r}
+
+combinedData=combinedData %>% inner_join(STITCHR_OUT_COMBINEDDATA %>% select(TCR_ID, TRB_aa_no_leader_no_constant, TRBV, TRBJ)%>% distinct()) # Add in TCR info from stitchr
+combinedData=combinedData%>%filter(! tcr %in% grep("unproductive", tcr,value = T)) # Remove unproductive TCRs
+
+combinedData=combinedData %>% dplyr::rename(cdr3=tcr) %>% dplyr::rename(tcr = TRB_aa_no_leader_no_constant) # Rename tcr to cdr3 and TRB to tcr
+combinedData=combinedData %>% select(! SMILES) # Remove SMILES column
+
+# PROTCHECK on Peptide and TCR
+TCR_DT = combinedData %>% select(tcr) %>% distinct
+PEPTIDE_DT = combinedData %>% select(Peptide) %>% distinct()
+
+# CHECK PEPTIDE
+VALIDSEQS=foreach(i=1:nrow(PEPTIDE_DT),.combine = "rbind", .packages = c("data.table","dplyr","protr"))%do% {
+  PEPTIDE=PEPTIDE_DT$Peptide[i]
+  VALID = protcheck(PEPTIDE)
+  data.table(Peptide=PEPTIDE, ValidSeq=VALID)
+}
+VALIDSEQS %>% select(ValidSeq) %>% table
+TO_EXCLUDE=VALIDSEQS %>% filter(ValidSeq==FALSE)%>% pull(Peptide)
+combinedData=combinedData %>% filter(! Peptide %in% TO_EXCLUDE)
+
+# OUT ALL PEPTIDES FOR SMILES RUN
+#combinedData %>% select(Peptide) %>% distinct()%>%write.csv(file="ALL_PEPTIDES_SMILES.csv",quote=FALSE,row.names=FALSE)
+
+## READ SMILES
+NEW_SMILES = fread("ALL_PEPTIDES_SMILESSMILES_OUT.csv")
+combinedData=combinedData %>% drop_na() %>% inner_join(NEW_SMILES)
+
+
+```
+
+```{r}
+
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")%>% mutate(Length = nchar(Peptide))%>%
+        filter(Length %in% c(9,10)) # Read in mutations and filter for 9 and 10mers
+# Write out all mutated epitopes for SMILES run, ie t generate smiles for all epitopes of interest
+MUTATIONS %>% select(Peptide,VariantAlignment) %>% distinct() %>% pivot_longer(cols = c("Peptide","VariantAlignment")) %>% select(value) %>% dplyr::rename(Peptide=value)%>%write.csv(file="ALL_MUTATED_EPITOPES_PEPTIDES_SMILES.csv",quote=FALSE,row.names=FALSE)
+
+NEW_SMILES=fread("ALL_MUTATED_EPITOPES_PEPTIDES_SMILESSMILES_OUT.csv") # Read in smiles for all mutated epitopes
+
+EPITOPES_FOR_ANALYSIS=unique(MUTATIONS$Peptide) # Get all unique epitopes for analysis
+
+## Ideally, we'd test Wuhan vs every CoV2 specific TCR, and Oomicron vs every cov2 specific TCR, and compare the # > threshold for binding.
+# Depends on how many observations though. 
+
+# How many epitopes: 4693
+N_EPS=length(EPITOPES_FOR_ANALYSIS)
+
+# How many unqiue cov2 TCRs infull combiend dataset
+N_TCRS=combinedData %>% select(tcr) %>% distinct() %>% nrow
+
+# Obs each group 
+N_EPS * N_TCRS
+
+
+```
+
+# Create a data table with all epitopes and all TCRs
+- Below we create a data table with all possible combinations of epitopes and TCRs
+- This will be used to assess specificity, i.e how many TCRs bind to each WT or MT epitope
+- - Everything labelled as pve for testing. irrelevant really as we are trying to simply gauge whether the number of predicted binding TCRs is higher for omicron epitopes than wuhan epitopes or vice-versa.
+```{r}
+NEW_SMILES=NEW_SMILES %>% mutate(Peptide_ID=row_number()) # Create an id for each peptide
+# Wuhan epitopes against all available TCrs.
+
+WUHAN_PEPTIDES_DT=NEW_SMILES %>% filter(Peptide%in%MUTATIONS$Peptide) %>% select(Peptide, Peptide_ID, SMILES)%>% distinct() # Get all wuhan epitopes
+TOTAL_TCR_DT=combinedData %>% select(tcr, TCR_ID)%>% distinct() # Get all TCRs
+
+WUHAN_TCR_SPECIFICTY_DT = tidyr::crossing(WUHAN_PEPTIDES_DT, TOTAL_TCR_DT) # Create a data table with all possible combinations of Wuhan epitopes and TCRs
+WUHAN_TCR_SPECIFICTY_DT=WUHAN_TCR_SPECIFICTY_DT%>% mutate(label=1) # irrelevant really, just label everything as pve
+
+OMICRON_PEPTIDES_DT=NEW_SMILES %>% filter(Peptide%in%MUTATIONS$VariantAlignment) %>% select(Peptide, Peptide_ID, SMILES)%>% distinct() # Get all Omicron epitopes uniquely
+OMICRON_TCR_SPECIFICITY_DT = tidyr::crossing(OMICRON_PEPTIDES_DT,TOTAL_TCR_DT) # Create a data table with all possible combinations of Omicron epitopes and TCRs
+OMICRON_TCR_SPECIFICITY_DT=OMICRON_TCR_SPECIFICITY_DT%>% mutate(label=1) # irrelevant really, just label everything as pve.
+
+
+```
+
+# WUHAN OUT
+- write data out for testing
+```{}
+
+FILEPATH = "TEST_TCR_SPECIFICITY_WUHAN_FOR_TRAPP_EPS/"
+dir.create(FILEPATH)
+
+#epitopes.smi
+WUHAN_TCR_SPECIFICTY_DT%>% select(SMILES, Peptide_ID)%>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"epitopes.smi"), col_names = FALSE)
+
+WUHAN_TCR_SPECIFICTY_DT  %>% select(tcr, TCR_ID) %>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"tcr.csv"), col_names = FALSE)
+
+WUHAN_TCR_SPECIFICTY_DT  %>% select(Peptide_ID,TCR_ID,label) %>% dplyr::rename(ligand_name=Peptide_ID, sequence_id=TCR_ID)%>%
+  write.csv(file = paste0(FILEPATH,"test.csv"),row.names = TRUE)
+
+WUHAN_TCR_SPECIFICTY_DT %>% select(label)%>% table
+
+WUHAN_TCR_SPECIFICTY_DT %>%
+  write.csv(file = paste0(FILEPATH,"Fulldataset.csv"),row.names = TRUE)
+
+```
+
+
+```{}
+
+WUHAN_TCR_SPECIFICTY_DT%>% select(Peptide) %>% distinct() %>% mutate(Length=nchar(Peptide))%>% select(Length)%>% table
+WUHAN_TCR_SPECIFICTY_DT%>% select(tcr) %>% distinct() %>% mutate(Length=nchar(tcr))%>% select(Length)%>% table
+
+```
+
+# OMICRON OUT
+- write data out for testing
+```{}
+FILEPATH = "TEST_TCR_SPECIFICITY_OMICRON_FOR_TRAPP_EPS/"
+dir.create(FILEPATH)
+
+#epitopes.smi
+OMICRON_TCR_SPECIFICITY_DT%>% select(SMILES, Peptide_ID)%>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"epitopes.smi"), col_names = FALSE)
+
+OMICRON_TCR_SPECIFICITY_DT  %>% select(tcr, TCR_ID) %>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"tcr.csv"), col_names = FALSE)
+
+OMICRON_TCR_SPECIFICITY_DT  %>% select(Peptide_ID,TCR_ID,label) %>% dplyr::rename(ligand_name=Peptide_ID, sequence_id=TCR_ID)%>%
+  write.csv(file = paste0(FILEPATH,"test.csv"),row.names = TRUE)
+
+OMICRON_TCR_SPECIFICITY_DT %>% select(label)%>% table
+
+OMICRON_TCR_SPECIFICITY_DT %>%
+  write.csv(file = paste0(FILEPATH,"Fulldataset.csv"),row.names = TRUE)
+
+```
+
+
+```{r}
+# Read in model training data: this will be used to exclude any training observations from test data
+MODEL_TRAINING_DATA = fread("TRAIN_TITAN_OTB_FINAL_TEST_OTB_POGORELY_MIRA_NOWUHANMUT_100K_NO_OMI_NVE/Fulldataset.csv")%>% inner_join(combinedData %>% select(Peptide_ID,Peptide) %>% distinct())%>% inner_join(combinedData %>% select(TCR_ID, tcr) %>% distinct())%>% select(! c(TCR_ID, Peptide_ID,SMILES,label))
+# Read in model predictions for every possible combination of TCR and omicron epitopes
+FILEPATH = "TEST_TCR_SPECIFICITY_OMICRON_FOR_TRAPP_EPS/"
+OMICRON_TCR_SPECIFICITY_DT = fread(paste0(FILEPATH,"Fulldataset.csv"))%>% mutate(ID=row_number())
+# Read in model predictions for every possible combination of TCR and wuhan epitopes
+FILEPATH = "TEST_TCR_SPECIFICITY_WUHAN_FOR_TRAPP_EPS/"
+WUHAN_TCR_SPECIFICTY_DT= fread(paste0(FILEPATH,"Fulldataset.csv"))%>% mutate(ID=row_number())
+
+# Link w test data
+WUHAN_SPECIFICITY_PREDICTIONS = fread("TRAIN_TITAN_OTB_FINAL_TEST_OTB_POGORELY_MIRA_NOWUHANMUT_100K_NO_OMI_NVE/test_fine_tuned/OTB_POG/results/TEST_TCR_SPECIFICITY_WUHAN_FOR_TRAPP_EPS.csv")%>% t()%>% as.data.table()%>% dplyr::rename(ImmunogenicityScore=V1, Immunogenicity=V2)%>% mutate(Dataset = "WuhanSpecificity")%>% mutate(ID=row_number())%>% inner_join(WUHAN_TCR_SPECIFICTY_DT %>% select(!label))%>%mutate(Subset="Wuhan")
+
+OMICRON_SPECIFICITY_PREDICTIONS=fread("TRAIN_TITAN_OTB_FINAL_TEST_OTB_POGORELY_MIRA_NOWUHANMUT_100K_NO_OMI_NVE/test_fine_tuned/OTB_POG/results/TEST_TCR_SPECIFICITY_OMICRON_FOR_TRAPP_EPS.csv")%>% t()%>% as.data.table()%>% dplyr::rename(ImmunogenicityScore=V1, Immunogenicity=V2)%>% mutate(Dataset = "OmicronSpecificity")%>% mutate(ID=row_number())%>% inner_join(OMICRON_TCR_SPECIFICITY_DT%>% select(!label))%>%mutate(Subset="Omicron")
+
+
+```
+
+
+```{r}
+# get rid of smiles
+OMICRON_PEPTIDES_DT=OMICRON_PEPTIDES_DT %>% select(!SMILES)
+WUHAN_PEPTIDES_DT=WUHAN_PEPTIDES_DT %>% select(!SMILES)
+
+```
+
+
+
+```{r}
+# Exclude any training observations from test data
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
+PEP_VARIANT_MAPPING=MUTATIONS %>% select(Peptide,VariantAlignment)%>% distinct()
+
+WUHAN_SPECIFICITY_PREDICTIONS=WUHAN_SPECIFICITY_PREDICTIONS%>%anti_join(MODEL_TRAINING_DATA)
+OMICRON_SPECIFICITY_PREDICTIONS = OMICRON_SPECIFICITY_PREDICTIONS%>%anti_join(MODEL_TRAINING_DATA)
+
+```
+
+
+
+
+
+```{r}
+
+WUHAN_DT_WIDE=WUHAN_SPECIFICITY_PREDICTIONS %>% select(Peptide, ImmunogenicityScore, tcr)%>% distinct()%>%
+        dplyr::rename(WuhanImmunogenicityScore=ImmunogenicityScore)%>%
+        mutate(WuhanImmPred = ifelse(WuhanImmunogenicityScore>0.85, "Positive","Negative"))%>% # set binary classification of pve if >0.85
+        group_by(Peptide,WuhanImmPred)%>% dplyr::summarise(N_TCR_WUHAN = n())%>% ungroup()%>% # count number of TCRs per epitope predicted to bind
+        tidyr::complete(Peptide, WuhanImmPred, fill=list(N_TCR_WUHAN=1))%>% # if no TCRs predicted, impute with 1 (sa we know immunogenic, so binds at least a single TCR)
+        filter(WuhanImmPred =="Positive")%>% select(!WuhanImmPred) # retain number of pve predictions per epitope
+# same as above but for Omi
+OMICRON_DT_WIDE=OMICRON_SPECIFICITY_PREDICTIONS %>% select(Peptide, ImmunogenicityScore, tcr)%>% distinct()%>%
+        dplyr::rename(VariantAlignment=Peptide,OmicronImmunogenicityScore=ImmunogenicityScore)%>%
+        mutate(OmicronImmPred = ifelse(OmicronImmunogenicityScore>0.85, "Positive","Negative")) %>%
+        group_by(VariantAlignment, OmicronImmPred) %>% dplyr::summarise(N_TCR_OMICRON = n())%>% ungroup()%>%
+        tidyr::complete(VariantAlignment, OmicronImmPred, fill=list(N_TCR_OMICRON=1))%>%
+  filter(OmicronImmPred =="Positive")%>% select(!OmicronImmPred)
+
+# create specificity DT table for downstream analysis
+SPECIFICTY_DT_WIDE=WUHAN_DT_WIDE %>% inner_join(MUTATIONS) %>% inner_join(OMICRON_DT_WIDE)%>% distinct()
+SPECIFICTY_DT_WIDE=SPECIFICTY_DT_WIDE%>% mutate(Relative_TCRSpecificity = log(N_TCR_OMICRON/N_TCR_WUHAN)) # calculate relative specificity Omi/Wuhan
+
+saveRDS(SPECIFICTY_DT_WIDE, file="SPECIFICTY_DT_WIDE_V3_TRAPP.rds")
+
+```
+
+```{r}
+
+WUHAN_SPECIFICITY_PREDICTIONS %>% select(Peptide, ImmunogenicityScore, tcr)%>% distinct()%>% dplyr::rename(WuhanImmunogenicityScore=ImmunogenicityScore)%>% mutate(WuhanImmPred = ifelse(WuhanImmunogenicityScore>0.85, "Positive","Negative"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

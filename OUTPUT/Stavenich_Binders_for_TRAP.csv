@@ -1,0 +1,3 @@
+Peptide,BA_Rank,Predicted_Binding,Status,Dataset,Protein
+PTDNYITTY,0.0118,HLA-A0101,WT,Stavenich,ORF1ab
+PADNYITTY,0.116,HLA-A0101,MT,Stavenich,ORF1ab

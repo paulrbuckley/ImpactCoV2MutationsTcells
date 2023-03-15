@@ -1,0 +1,157 @@
+---
+title: "R Notebook"
+output: html_document
+---
+
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(Biostrings)
+library(tidyverse)
+library(foreach)
+library(stringdist)
+library(doParallel)
+library(stringr)
+
+```
+
+# Combine WT, MT binding scores and mutation info to generate a mutations DT for Delta
+-
+```{r}
+
+Delta_WT_BINDING_SCORES = readRDS("OUTPUT/Delta_WT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "Delta")
+Delta_MT_BINDING_SCORES = readRDS("OUTPUT/Delta_MT_BINDING_SCORES_NETMHCPAN.rds")%>% mutate(Variant = "Delta")
+Delta_MUTATIONS = readRDS("OUTPUT/Delta_EPITOPE_MUTATIONS.rds")%>% mutate(Variant = "Delta")
+
+
+FULL_MUTATIONS_DT_Delta=Delta_MUTATIONS %>% inner_join(Delta_WT_BINDING_SCORES) %>% inner_join(Delta_MT_BINDING_SCORES)
+# rbind everything together
+FULL_MUTATIONS_DT = FULL_MUTATIONS_DT_Delta
+FULL_MUTATIONS_DT=FULL_MUTATIONS_DT%>% ungroup()
+saveRDS(FULL_MUTATIONS_DT,"DELTA_FULL_MUTATIONS_DT.rds")
+
+```
+
+# Create Agretopicity DT
+
+```{r}
+
+# Create AgretopicityDT', combining for all subvariants, information regarding the mutation, binding metrics of WT and MT.N
+AGRETOPICITY_DT=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder, Variant) %>%
+        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>%
+        mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))
+AGRETOPICITY_DT
+AGRETOPICITY_DT=AGRETOPICITY_DT %>% mutate(Agretopicity = MT_nM_41/nM_41)
+# Create a DT only for spike.
+SPIKE_AGRETOPICITY=AGRETOPICITY_DT %>% filter(Protein == 'surface glycoprotein') %>% mutate(Length = nchar(Peptide))
+SPIKE_AGRETOPICITY %>% group_by(Variant)%>% dplyr::summarise(meanAg = mean(Agretopicity))
+# For spikeDT, Exclude pMHC observations where the WT and MT are both nonbinders. I.E, I don't care about MHC where WT and MT are not binders. irrelevant
+SPIKE_AGRETOPICITY=SPIKE_AGRETOPICITY %>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))%>% ungroup
+```
+
+
+```{r,dpi=300, fig.width = 10}
+
+# ECDF, facetted by each variant. Compares WT vs MT, nM affinity log10
+SUBVAR_ECDF_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>% # organise data for ggplot ECDF function
+  pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff")%>%
+  mutate(Dataset = replace(Dataset, Dataset == "nM_41", "Wuhan"))%>% # nM41 is WT
+  mutate(Dataset = replace(Dataset, Dataset == "MT_nM_41", "Omicron"))%>% # MT is Omicron
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>% # deal with factor order
+        ggplot(aes(x=Aff, color=Dataset))+stat_ecdf(size=1)+facet_grid(~Variant)+
+        theme_pubr(base_size = 16)+grids()+ guides(color = guide_legend(nrow = 2))+
+        ylab("Cumulative Freq. of Peptides")+xlab("Log10 Binding Affinity\n(nM)")+
+        geom_vline(xintercept = 500,linetype="dashed",alpha=0.5)+scale_x_log10() # log10 scale
+SUBVAR_ECDF_PLT
+
+# Same data as above but shown by violin, facetted by each variant. Compares WT vs MT, nM affinity log10
+SUBVAR_VIOLIN_PLT=SPIKE_AGRETOPICITY %>% select(Peptide, nM_41, MT_nM_41, Variant)%>%
+  pivot_longer(cols = c(nM_41,MT_nM_41), names_to = "Dataset",values_to = "Aff") %>%
+  mutate(Dataset = replace(Dataset, Dataset == "nM_41", "Wuhan"))%>%
+  mutate(Dataset = replace(Dataset, Dataset == "MT_nM_41", "Omicron"))%>%
+  mutate(Dataset = factor(Dataset, levels = c("Wuhan","Omicron")))%>%
+         ggviolin(x="Dataset",y="Aff",color = "Dataset",add="boxplot",trim=TRUE)+
+  facet_grid(~Variant)+theme_pubr(base_size = 16)+scale_y_log10()+
+  stat_compare_means(label = "p.signif",label.x.npc = "center")+ylab("Log10 Binding Affinity\n(nM)")
+SUBVAR_VIOLIN_PLT
+
+
+```
+
+# Group WT-MT analysis by HLA supertype
+## Spike only
+
+```{r}
+# Read in list of HLA A-B supertypes and clean
+# We compile HLAA-B suopertypes and -C separately. C does not have well defined supertypes, so for the supertype we use just the prefix i.e HLA-C01, or C02 etc.
+AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>%
+  mutate(Allele = gsub("\\*","",Allele))%>%
+  mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
+# Extraxt data for analysis
+DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT%>% ungroup() %>%
+  filter(Protein == "surface glycoprotein") %>% # spike
+  select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder,Variant) %>% # rows needed
+  separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>%
+  mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>%
+  mutate(Agretopicity = MT_nM_41/nM_41)
+# Link fr HLA A-B alleles the supertype
+HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>%
+  filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>%
+  inner_join(AB_SUPERTYPES) %>%
+  filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER')) # Exclude pMHC where WT and MT peptide do not bind. Irrelevant [see methods]
+# Create HLA -C data as above
+HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>%
+  filter(!HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>%  # filter only HLA-C
+  mutate(Supertype = str_extract(HLA_Allele,"HLA-C[0-9][0-9]"))%>% # grep the prefix
+  mutate(Supertype = gsub("HLA\\-","",Supertype))%>%
+  filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))# Exclude pMHC where WT and MT peptide do not bind. Irrelevant [see methods]
+
+```
+
+
+
+```{r,dpi=300, fig.width  = 11, fig.height = 12}
+# For supertypes with sig differences
+# Create a paired boxplot.
+SUBVAR_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% # combine HLA A, B, C observations
+  filter(Supertype %in% c("A02","A03","B07","C01"))%>% # filter for significant alleles/alleles of interest
+        dplyr::rename(Wuhan=nM_41, Omicron = MT_nM_41)%>% # rename the colums
+        ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(Variant~Supertype)+
+        theme_pubr(base_size = 16)+scale_y_log10()+
+        stat_compare_means(label = "p.signif",label.x.npc = "center")+
+        rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")
+
+SUBVAR_SUPERTYPE_BOXPLT
+
+```
+
+# OUT FOR TRAP
+```{r}
+DELTA_FULL_DATASET_TRAP=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, BA_Rank, MT_BA_Rank,Binder,MT_Binder, Variant) %>%
+        separate_rows_(cols = c("Predicted_Binding","BA_Rank","MT_BA_Rank","Binder","MT_Binder"),sep=",") %>%
+        mutate(BA_Rank = as.numeric(BA_Rank)) %>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank)) %>%
+        filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+DELTA_FULL_DATASET_TRAP_WT = DELTA_FULL_DATASET_TRAP %>% filter(BA_Rank < 2.0) %>% select(Peptide, Protein, Predicted_Binding, BA_Rank)%>% mutate(Dataset="WT_Delta")
+
+DELTA_FULL_DATASET_TRAP_MT = DELTA_FULL_DATASET_TRAP %>% filter(MT_BA_Rank < 2.0) %>% select(VariantAlignment, Protein, Predicted_Binding, MT_BA_Rank)%>% mutate(Dataset="MT_Delta")%>% dplyr::rename(BA_Rank=MT_BA_Rank, Peptide=VariantAlignment)
+
+DELTA_FULL_DATASET_TRAP_WT %>% rbind(DELTA_FULL_DATASET_TRAP_MT)%>% readr::write_csv(file="OUTPUT/Delta_Binders_INPUT4TRAP.csv")
+```
+
+
+
+
+
+
+
+
+
+
+

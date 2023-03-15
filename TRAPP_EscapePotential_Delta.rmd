@@ -1,0 +1,1553 @@
+---
+title: "R Notebook"
+output: bookdown::html_document2
+---
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+library(ggpubr)
+library(pROC)
+library(yardstick)
+library(purrr)
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+# Introduction
+- This notebook encompasses the analysis for mutagenesis.
+- First, we generate the dataset required for analysis. This includes 19 different mutated epitopes compared to one WT. The WT is a known immunogenic epitope from CoV2.
+- We incorporate the TRAP scores into this analysis. In some cases, we im[pute the scores.
+
+# Data preparation
+## Read in MUTANT TRAP SCORES
+- Generate 'FullDataset' i.e 'Peptide, Dataset, HLA, PredictionScore'. These are the score generated for mutants, which are single amino acid substitutions away from our Wuhan CoV2 targets ofinterest
+
+```{r}
+
+# Read in TRAP predictoins
+FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_delta_mutagenesis_test_prediction.txt")%>% distinct()
+# Read in information supplied to TRAP, to link pMHC with score. This includes all pMHC generated  via in silico mutagenesis
+INPUT_DATA_TRAPP=fread("DELTA_INSILICO_MUTAGENESIS_PREDBINDING_OUT4TRAP.csv")%>%
+         distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
+        mutate(nlog2Rank = - log2(BA_Rank))
+
+INPUT_DATA_TRAPP=INPUT_DATA_TRAPP %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
+
+FullDataset=FullDataset%>% mutate(nlog2Rank = round(nlog2Rank, digits=4)) # Use nlog2Rank to link pMHC with TRAP output score
+FullDataset=FullDataset %>% inner_join(INPUT_DATA_TRAPP)
+
+# Cleaning
+FullDataset %>% select(Dataset)%>% table
+FullDataset=FullDataset%>%dplyr::rename(Prediction=prediction)
+FullDataset=FullDataset %>% select(Peptide, Dataset, Predicted_Binding, Prediction)
+FullDataset=FullDataset %>% filter(Dataset == "Mutagenesis")
+
+```
+
+
+## Get full dataset, all WT and MT.
+- We need to find all pMHC rank scores, to know what pMHC to include, exclude and impute.
+- This is because e.g., I am not including sampels where both WT-MT dont bind MHC.
+
+
+```{r}
+
+
+# Class I OMICRON MUTANTS
+TEST_DATA_LOCATION = "NETMHCPAN_CLASSI_MUTAGENESIS_DELTA/"
+
+data_path <- TEST_DATA_LOCATION
+files <- dir(data_path, pattern = "NetMHC_Results.csv")
+
+data3 <- data_frame(file = files) %>%
+  mutate(file_contents = map(file,
+                             ~ fread(file.path(data_path, .),skip = 1))
+  )
+
+Netmhcpanres <- unnest(data3)
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
+
+NETMHC_CLASSI=Netmhcpanres
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(MT_nM_41 = round(50000^(1-`BA-score`) ,digits=5))
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER"))
+
+
+MUTAGENESIS_BINDERS=NETMHC_CLASSI %>% select(Peptide, HLA_Allele, BA_Rank,Binder)%>% mutate(Dataset="Mutagenesis")%>% distinct()
+MUTAGENESIS_BINDERS=MUTAGENESIS_BINDERS%>% dplyr::rename(Predicted_Binding=HLA_Allele, AASeq2=Peptide, MT_Binder=Binder, MT_BA_Rank = BA_Rank)
+
+```
+
+- Read in information regarding mutations for Wuhan eps with mutation in BA1,
+- Read in Wuhan set pMHC scores
+
+```{r}
+MUTATIONS = readRDS("OUTPUT/Delta_EPITOPE_MUTATIONS.rds")
+WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% filter(Peptide %in% MUTATIONS$Peptide)
+
+WUHAN_PEPTIDES_BINDING_SCORES %>% head
+
+```
+
+
+```{r}
+# cleaning
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% select(Peptide, Predicted_Binding, BA_Rank, Binder)%>%
+        separate_rows_(cols = c("Predicted_Binding","BA_Rank","Binder"),sep=",")%>% mutate(Dataset = "WuhanTest")
+
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% dplyr::rename(AASeq1=Peptide)%>% select(!Dataset)
+```
+
+
+- Read in Omicron mutated pMHC scores
+```{r}
+
+OMI_PEPTIDES_BINDING_SCORES=readRDS("OUTPUT/Delta_MT_BINDING_SCORES_NETMHCPAN.rds")
+OMI_PEPTIDES_BINDING_SCORES %>% head
+
+OMI_PEPTIDES_BINDING_SCORES=OMI_PEPTIDES_BINDING_SCORES%>% dplyr::rename(Predicted_Binding=MT_Predicted_Binding) %>% select(VariantAlignment, Predicted_Binding, MT_BA_Rank, MT_Binder)%>%
+        separate_rows_(cols = c("Predicted_Binding","MT_BA_Rank","MT_Binder"),sep=",")%>%
+        dplyr::rename(AASeq2=VariantAlignment)%>%
+        mutate(Dataset = "DeltaTest")
+
+OMI_PEPTIDES_BINDING_SCORES %>% filter(AASeq2 == "SHRRARSVA")
+
+```
+
+```{r}
+# Mutant data consists of the Mutagenesis set + the Omicron epitope.
+MT_DATA=MUTAGENESIS_BINDERS %>% rbind(OMI_PEPTIDES_BINDING_SCORES) %>% select(!Dataset)%>% distinct()
+# WT data consists of the Wuhan set
+WT_DATA = WUHAN_PEPTIDES_BINDING_SCORES
+
+```
+
+
+```{r}
+#FullDataset %>% mutate(Type = ifelse)
+# Read in 'INSILICO_MUTAGENESIS_WUHANOMICRON' - this links WT to each respective mutant.
+# Filter for substitutions and 9/10mers
+INSILICO_MUTAGENESIS_WUHANOMICRON=readRDS("INSILICO_MUTAGENESIS_WUHANDELTA.rds") %>% filter(Mut_type == "Substitution")
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% mutate(Length = nchar(AASeq1))%>% filter(Length %in% c(9,10))
+```
+
+```{r}
+# Inner join all the data. So for each row we have WTPeptide, MTPeptide, HLA, Rank scores for WT and MT.
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% left_join(MT_DATA)%>% drop_na()
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% left_join(WUHAN_PEPTIDES_BINDING_SCORES)%>% drop_na()
+
+```
+
+# Exclude WT AND MT NON BINDERS
+- Now we exclude any generated pMHC where Wt and MT both don't bind MHC. These are irrelevant
+-
+```{r}
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON%>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% select(order(colnames(INSILICO_MUTAGENESIS_WUHANOMICRON)))
+
+
+```
+
+# Join everything
+- So here we join the TRAP scores with the INSILICO_MUTAGENESIS dataset.
+- The ANTIJOIN set are those data which we cannot link directly but should be able to.
+- ANTIJOIN has a few groups, BINDER_BINDER, where WT and MT Bind. BINDER_NONBINDER, where WT but not MT bind, etc.
+- We need to deal with each group.
+- BINDER_BINDER, means that for whatever reason, we can't directly link our mutagenesis dataset with a TRAP score. Likely due to rounding and that we can't match by nlog2Rank.
+- BINDER NONBINDER means that WT bound pMHC but mutant doesnt. We need to impute a score here. SAme vice-versa.
+
+
+```{r}
+# AASeq2 is the mutant peptide.
+FullDataset=FullDataset %>% dplyr::rename(AASeq2=Peptide)
+
+ANTIJOIN_SET=INSILICO_MUTAGENESIS_WUHANOMICRON %>% anti_join(FullDataset)
+# Join by column AASeq2. Prediction here is the TRAP score for mutant peptides.
+INSILICO_MUTAGENESIS_WUHANOMICRON = INSILICO_MUTAGENESIS_WUHANOMICRON%>% inner_join(FullDataset)
+
+ANTIJOIN_SET%>% mutate(GROUP = paste0(Binder, "_",MT_Binder))%>% select(GROUP) %>% table
+
+
+```
+```{r}
+
+# Deal w binder binder. we can't link them directly by matching nlog2Rank.
+# So find the scores and create the data
+BINDER_BINDER=ANTIJOIN_SET %>% mutate(GROUP = paste0(Binder, "_",MT_Binder)) %>% filter(GROUP=="BINDER_BINDER")
+
+BINDER_BINDER=BINDER_BINDER %>% mutate(BA_Rank = as.numeric(BA_Rank))%>% mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))%>%
+        left_join(fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_delta_mutagenesis_test_prediction.txt")%>%
+                          distinct()%>%
+                          dplyr::rename(AASeq2=Peptide, MT_BA_Rank=BA_Rank)  ) %>%
+        select(AASeq1, AASeq2, BA_Rank, Binder, Length, MT_BA_Rank, MT_Binder, Mut_type, Predicted_Binding, prediction) %>%
+        dplyr::rename(Prediction=prediction)%>% distinct()
+
+# Deal w/ binder non-binder: impute a TRAP score of 0.01 for the MT.
+BINDER_NONBINDER = ANTIJOIN_SET%>% mutate(GROUP = paste0(Binder, "_",MT_Binder)) %>% filter(GROUP=="BINDER_NONBINDER")
+BINDER_NONBINDER = BINDER_NONBINDER %>% select(! GROUP) %>% mutate(Prediction=0.01)
+
+#%>% mutate(Binder=as.numeric(Binder)) %>% mutate(MT_Binder=as.numeric(MT_Binder))
+```
+
+## Bind everything together.
+
+```{r}
+
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% select(! Dataset) %>%
+         distinct() %>% rbind(BINDER_BINDER, BINDER_NONBINDER)%>%
+        mutate(AASeq2_Prediction= Prediction)
+
+```
+
+## Now read in WT score. These are those generated for the wuhan pMHC
+
+```{r}
+# FullDataset now contains the WT TRAP score.
+FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_delta_mutagenesis_test_prediction.txt")%>% distinct()
+# Link to the specific pMHC via nlog2Rank. This is done because TRAP output lacks the particular MHC for which the observation was generated.
+INPUT_DATA_TRAPP=fread("DELTA_INSILICO_MUTAGENESIS_PREDBINDING_OUT4TRAP.csv")%>%
+        distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
+        mutate(nlog2Rank = - log2(BA_Rank))
+
+INPUT_DATA_TRAPP=INPUT_DATA_TRAPP %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
+FullDataset=FullDataset%>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
+FullDataset=FullDataset %>% inner_join(INPUT_DATA_TRAPP)
+# Clean. Filter for Wuhan WT peptide
+FullDataset %>% select(Dataset)%>% table
+FullDataset=FullDataset%>%dplyr::rename(Prediction=prediction)
+FullDataset=FullDataset %>% select(Peptide, Dataset, Predicted_Binding, Prediction)
+FullDataset=FullDataset %>% filter(Peptide %in% MUTATIONS$Peptide)
+# AASeq1 is the WT peptide.
+FullDataset=FullDataset %>% select(! Dataset)%>% distinct()%>% dplyr::rename(AASeq1=Peptide, WT_Prediction=Prediction)
+# Leftjoin with our mutagenesis dataset
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% left_join(FullDataset)
+# Impute a score for those where WT was a nonbinder but MT now binds. This MT may now be immunogenic thus must be analysed.
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>%
+        mutate(WT_Prediction = replace(WT_Prediction, (Binder == "NONBINDER" & MT_Binder == "BINDER"), 0.01))
+
+# Are there any NA generated from the left join? No, this means we have a WT and MT score for each observation.
+colnms = colnames(INSILICO_MUTAGENESIS_WUHANOMICRON)
+INSILICO_MUTAGENESIS_WUHANOMICRON %>%
+  filter_at(vars(all_of(colnms)), any_vars(is.na(.)))
+# Cleaning.
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>%
+        select(!Prediction)%>% dplyr::rename(Prediction = AASeq2_Prediction, WuhanScore = WT_Prediction)
+FULL_PREDICTIONS_DT=INSILICO_MUTAGENESIS_WUHANOMICRON%>% dplyr::rename(Peptide=AASeq1)
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% filter(! Peptide == AASeq2)
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% dplyr::rename(TRAPP_MUTANT_Prediction=Prediction)%>%
+        dplyr::rename(TRAPP_Prediction = WuhanScore)%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
+        mutate(MT_BA_Rank = as.numeric(MT_BA_Rank))
+
+# Now, we want to produce an overall score incorporating both (TRAP score * MHC binding score)
+# MHCScore is produced by a negative logit function of the Rank score. X-2 as the threshold for 2 being the cutoff threshold for binding.
+# 1.5 selected abritrarily to reduce the magnitude of the curve.. so rank scores of e.g., 2.1 aren't treated as harshly as they may be with a higher value such as 5.
+
+#negative logistic function
+neg_logit_function = function(x) {
+  1/(1+exp(1.5*(x-2)))
+}
+# Transform WT and MT MHCScore
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(MHCScore = neg_logit_function(BA_Rank))%>% mutate(MT_MHCScore = neg_logit_function(MT_BA_Rank))
+#FULL_MUTATIONS_DT %>% mutate(MHCScore = min_max_norm(BA_Rank))%>% mutate(MT_MHCScore = min_max_norm(MT_BA_Rank))
+# Calculate the Wuhan Immunogenicity score and the MT Immunogenicity score (Prediction)
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(WuhanScore = TRAPP_Prediction * MHCScore)%>% mutate(Prediction = TRAPP_MUTANT_Prediction* MT_MHCScore)
+# To avoid huge skews at the limit approaching zero, we replace anything with <0.01 with 0.01
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(WuhanScore = replace(WuhanScore, WuhanScore<0.01, 0.01))%>%
+  mutate(Prediction = replace(Prediction, Prediction<0.01, 0.01))
+#FULL_MUTATIONS_DT=FULL_MUTATIONS_DT %>% rbind(NA_SET_BINDER_NONBINDER)%>% rbind(NA_SET_NONBINDER_BINDER)
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(WuhanScore = round(WuhanScore, digits=4))%>%
+        mutate(Prediction = round(Prediction, digits=4))%>% distinct()
+# Anything rounded to == 0 is set to 0.01
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(WuhanScore = replace(WuhanScore, WuhanScore==0.0, 0.01))%>%
+  mutate(Prediction = replace(Prediction, Prediction==0.0, 0.01))
+FULL_PREDICTIONS_DT %>% group_by(Peptide)%>% dplyr::summarise(meanScore = mean(WuhanScore))%>% slice_min(order_by = meanScore)
+
+# Remove likely FN
+FN_EPS=FULL_PREDICTIONS_DT %>% group_by(Peptide)%>% dplyr::summarise(maxScore = max(WuhanScore))%>% filter(maxScore < 0.45)%>% pull(Peptide)
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT%>% filter(! Peptide %in% FN_EPS)
+# Get rid of pMHC observations where WT and MT highly unlikely to be immunogenic. Less conservative here than previously, as more theoretical proof of principle analysis trying to retain as many samples as possible.
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% filter(!(Prediction < 0.35 & WuhanScore < 0.35))
+
+
+#saveRDS(FULL_PREDICTIONS_DT, file="INSILICO_MUTAGENESIS_COMPILED_PREDICTIONS_SUBONLY.rds")
+```
+
+# Create neighbor network RDS files
+## change functions
+- Adapted slightly from Repitope. Paralellisation uses out of date packages and won't work on cluster. Code was adapted to run on a single thread
+-
+```{r}
+
+neighborNetwork <- function(
+  peptideSet,
+  numSet=NULL,
+  directed=F,
+  weighted=F,
+  coreN=1
+){
+  # Start calculation
+  set.seed(12345)
+  time.start <- proc.time()
+
+  # Explore neighbor pairs
+
+  peptideList <- split(peptideSet, nchar(peptideSet))
+  cat("Searching neighbors by single-aa substitutions...\n")
+  dt_neighbor_sub <- foreach::foreach(i=1:length(peptideList), .inorder=F)%do%{
+    l <- nchar(peptideList[[i]][1])
+    dt_edges <- apply(data.table::CJ(1:l, Biostrings::AA_STANDARD), 1,
+                      function(v){
+                        aa_pos <- as.numeric(v[1])
+                        aa_sub <- v[2]
+                        s <- peptideList[[i]]
+                        s_prime <- s
+                        stringr::str_sub(s_prime, start=aa_pos, end=aa_pos) <- aa_sub
+                        pairPos <- setdiff(which(s_prime %in% s), which(s_prime==s))
+                        dt_edges <- data.table::data.table(
+                          "AASeq1"=s,
+                          "AASeq2"=s_prime,
+                          "AA1"=stringr::str_sub(s, start=aa_pos, end=aa_pos),
+                          "MutPosition"=aa_pos,
+                          "AA2"=aa_sub,
+                          "MutPattern"="Substitution"
+                        )
+                        dt_edges <- dt_edges[pairPos,]
+                        dt_edges[,MutType:=paste0(AA1, "_", MutPosition, "_", AA2)][,AA1:=NULL][,MutPosition:=NULL][,AA2:=NULL]
+                        return(dt_edges)
+                      })
+    data.table::rbindlist(dt_edges)
+  } %>%
+    data.table::rbindlist() %>%
+    unique(fromLast=F, by=c("AASeq1","AASeq2","MutPattern"))
+
+  gc();gc()
+  cat("Merging...\n")
+  dt_neighbor <- rbind(
+    dt_neighbor_sub
+  )
+  dt_neighbor[,MutPattern:=factor(MutPattern, levels=c("Substitution"))]
+  data.table::setorder(dt_neighbor, AASeq1, AASeq2, MutPattern, MutType)
+
+  # Construct a neighbor network object
+  net_neighbor <- igraph::graph_from_data_frame(dt_neighbor, directed=F)
+  net_neighbor <- igraph::set_vertex_attr(net_neighbor, name="label", value=igraph::V(net_neighbor)$name)
+  if(is.null(numSet)){
+    out <- list("NeighborNetwork"=net_neighbor, "PairDF"=dt_neighbor)
+  }else{
+    ## Weighted and directed network using a given set of scores
+    ## Direction is determined such that the score always increases after mutation
+    dt_num <- data.table::data.table("Peptide"=peptideSet, "Score"=numSet)
+    dt_neighbor_dw <- data.table::copy(dt_neighbor)
+    dt_neighbor_dw <- merge(dt_neighbor_dw, dt_num, by.x="AASeq1", by.y="Peptide")
+    dt_neighbor_dw <- merge(dt_neighbor_dw, dt_num, by.x="AASeq2", by.y="Peptide", suffixes=c("1","2"))
+    dt_neighbor_dw <- dt_neighbor_dw[Score2>=Score1,]
+    dt_neighbor_dw[,ScoreRatio:=Score2/Score1]
+    dt_neighbor_dw[,EdgeWeight:=Score1/Score2]
+    dt_neighbor_dw[EdgeWeight<0.001, EdgeWeight:=0.001] ### set an arbitrary minimum threshold
+    net_neighbor_dw <- igraph::graph_from_data_frame(dt_neighbor_dw, directed=directed)
+    net_neighbor_dw <- igraph::set_vertex_attr(net_neighbor_dw, name="label", value=igraph::V(net_neighbor_dw)$name)
+    if(weighted==T) igraph::E(net_neighbor_dw)$weight <- igraph::E(net_neighbor_dw)$EdgeWeight
+    out <- list(
+      "NeighborNetwork"=net_neighbor, "PairDF"=dt_neighbor,
+      "NeighborNetwork_DW"=net_neighbor_dw, "PairDF_DW"=dt_neighbor_dw
+    )
+  }
+
+  # Finish the timer
+  time.end <- proc.time()
+  message("Overall time required = ", format((time.end-time.start)[3], nsmall=2), "[sec]")
+
+  # Output
+  gc();gc()
+  return(out)
+}
+
+neighborNetwork_Cluster <- function(peptide, graph, metadataDF, seed=12345, plot=T){
+  ## Peptide labels
+  peptideLabels <- peptide
+  peptideSet <- igraph::V(graph)$"name"
+  igraph::V(graph)$label[!peptideSet %in% peptideLabels] <- ""
+
+  ## Metadata
+  metadataDF <- dplyr::filter(metadataDF, Peptide %in% peptideSet)
+  df_meta <- dplyr::select(metadataDF, Peptide, ImmunogenicityScore)
+  if("Immunogenicity" %in% colnames(metadataDF)){
+    df_meta$Immunogenicity <- metadataDF$Immunogenicity
+    igraph::V(graph)$Immunogenicity <- df_meta$Immunogenicity
+  }
+  igraph::V(graph)$ImmunogenicityScore <- df_meta$ImmunogenicityScore
+
+  ## Clusters
+  set.seed(seed)
+  df_meta <- dplyr::left_join(
+    dplyr::tibble("Peptide"=peptideSet,
+                  "Target"=dplyr::if_else(peptideSet==peptide, "Target", "Neighbor"),
+                  "ClusterID"=paste0("Cluster", igraph::cluster_walktrap(graph)$membership)),
+    df_meta,
+    by="Peptide"
+  )
+
+  ## No plot ver.
+  if(plot!=T) return(df_meta)
+
+  ## Coordinates
+  set.seed(seed)
+  l <- igraph::layout_nicely(graph)
+  df_meta <- dplyr::left_join(
+    magrittr::set_colnames(cbind(dplyr::tibble("Peptide"=peptideSet), as.data.frame(l)), c("Peptide","x","y")),
+    df_meta,
+    by="Peptide"
+  )
+
+  ## Consensus per cluster
+  clusteredPeptides <- df_meta %>%
+    dplyr::arrange(ClusterID) %>%
+    dplyr::mutate(ClusterID=as.character(ClusterID)) %>%
+    data.table::as.data.table() %>%
+    split(by="ClusterID") %>%
+    lapply(function(d){d[["Peptide"]]})
+  consensusSequence <- function(sequenceSet){
+    if(length(sequenceSet)==1) return(sequenceSet)
+    sink(tempfile())
+    s <- msa::msaConsensusSequence(msa::msaClustalW(sequenceSet, type="protein"), type="Biostrings", ambiguityMap="X", threshold=0.5)
+    sink()
+    return(s)
+  }
+  clusterConsensusSeqs <- sapply(clusteredPeptides, consensusSequence)
+  clusterConsensusSeqs <- stringr::str_replace_all(clusterConsensusSeqs, stringr::fixed("-"), "X")
+
+  ## Graph plot
+  clusterGraphPlot <- function(g, meta, layout, seed=12345){
+    ### Vertex annotations
+    colPal <- function(x){
+      pal <- colorRamp(append(ggsci::pal_d3()(2), "white", after=1), space="rgb")
+      cols <- pal(x)
+      apply(cols, 1, function(x){rgb(x[1], x[2], x[3], maxColorValue=255)})
+    }
+    clusterColors <- meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(ImmunogenicityColor=colPal(mean(ImmunogenicityScore)))
+    clusterColors <- scales::alpha(clusterColors$"ImmunogenicityColor", alpha=0.75)
+    vertexColors <- colPal(meta$"ImmunogenicityScore")
+    if(is.null(meta$"Immunogenicity")){
+      vertexShapes <- "circle"
+    }else{
+      vertexShapes <- dplyr::if_else(meta$"Immunogenicity"=="Positive", "circle", "square")
+    }
+    vertexLabels <- igraph::V(g)$"label"
+
+    ### Cluster labels
+    clusterCentroids <- meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(x=mean(x), y=mean(y))
+    clusterCentroids$x <- scales::rescale(clusterCentroids$x, to=c(-1, 1))
+    clusterCentroids$y <- scales::rescale(clusterCentroids$y, to=c(-1, 1))
+
+    ### Graph
+    try(dev.off(), silent=T)
+    set.seed(seed)
+    plot(
+      igraph::cluster_walktrap(g), g,
+      layout=layout,
+      col=vertexColors,
+      mark.border="black",
+      mark.col=clusterColors,
+      vertex.size=3,
+      vertex.shape=vertexShapes,
+      vertex.label=vertexLabels,
+      vertex.label.color="black",
+      vertex.label.cex=1.25,
+      vertex.label.dist=0.5,
+      vertex.label.family="sans",
+      vertex.color=vertexColors,
+      vertex.frame.color="black",
+      edge.width=0.5,
+      edge.arrow.size=0.25,
+      edge.arrow.width=0.1,
+      edge.color=scales::alpha("gray50", 0.75)
+    )
+    for(i in 1:length(clusterCentroids$ClusterID)){
+      text(
+        rep(clusterCentroids$x[[i]], 2),
+        clusterCentroids$y[[i]]+c(0, -0.1),
+        c(clusterCentroids$ClusterID[[i]], clusterConsensusSeqs[[i]]),
+        pos=3, cex=1.25, family="sans"
+      )
+    }
+    return(recordPlot())
+  }
+  neighborPlot <- clusterGraphPlot(
+    g=graph,
+    meta=df_meta,
+    layout=l,
+    seed=seed
+  )
+  return(list(
+    "SummaryDF"=df_meta,
+    "NeighborPlot"=neighborPlot
+  ))
+}
+
+#' @export
+#' @rdname NeighborNetwork_Clustering
+#' @name NeighborNetwork_Clustering
+neighborNetwork_Cluster_Batch <- function(neighborNetResult, metadataDF, seed=12345, coreN=parallel::detectCores(logical=F),origPeptide=PEPTIDE){
+  ## Extract peptide sequences
+  peptideSet <- igraph::V(neighborNetResult$"NeighborNetwork_DW")$"name"
+
+  #orig=origPeptide
+
+  ## Cluster analysis
+  message("Clustering neighbor network...")
+
+  res <- foreach::foreach(pept=peptideSet, .inorder=F)%do%{
+    graph <- Repitope::neighborNetwork_ConnectedSubGraph(neighborNetResult, pept)
+    df_meta <- neighborNetwork_Cluster(pept, graph, metadataDF, seed)
+    pos <- grep("Target", df_meta$"Target")
+    clust <- df_meta$"ClusterID"[[pos]]
+    score <- df_meta$"ImmunogenicityScore"[[pos]]
+    list("Peptide"=pept, "Score"=score, "ClusterID"=clust, "SummaryDF"=df_meta)
+  }
+  gc();gc()
+  return(res)
+}
+
+neighborNetwork_Cluster_FeatureDF <- function(neighborNetClusterResult, coreN=parallel::detectCores(logical=F)){
+  message("Computing cluster-based metrics...")
+
+  dt_feat <- foreach::foreach(i=1:length(neighborNetClusterResult), .inorder=F, .packages=c("dplyr","data.table"))%do%{
+    summaryDF <- neighborNetClusterResult[[i]][["SummaryDF"]]$SummaryDF
+    summaryDF <- dplyr::arrange(summaryDF, dplyr::desc(Target))
+    dt <- data.table::as.data.table(summaryDF[1,])
+    aveDF <- summaryDF %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(ImmunogenicityScore=mean(ImmunogenicityScore))
+    dt[,ImmunogenicityScore_Cluster_Average:=dplyr::filter(aveDF, ClusterID==dt$"ClusterID"[1])$"ImmunogenicityScore"]
+    aveDF <- dplyr::filter(aveDF, ClusterID!=dt$"ClusterID"[1])
+    dt[,ImmunogenicityScore_Cluster_Diff_Max:=max(aveDF$"ImmunogenicityScore") - ImmunogenicityScore_Cluster_Average]
+    dt[,ImmunogenicityScore_Cluster_Diff_Min:=ImmunogenicityScore_Cluster_Average - min(aveDF$"ImmunogenicityScore")]  ## Considered to be an "escape potential"
+    dt[,ImmunogenicityScore_Diff_Max:=max(summaryDF$"ImmunogenicityScore") - ImmunogenicityScore]
+    dt[,ImmunogenicityScore_Diff_Min:=ImmunogenicityScore - min(summaryDF$"ImmunogenicityScore")]
+    dt
+  } %>%
+    data.table::rbindlist()
+  gc();gc()
+  return(dt_feat)
+}
+
+neighborNetwork_Cluster <- function(peptide, graph, metadataDF, seed=12345, plot=T){
+  ## Peptide labels
+  peptideLabels <- peptide
+  peptideSet <- igraph::V(graph)$"name"
+  igraph::V(graph)$label[!peptideSet %in% peptideLabels] <- ""
+
+  ## Metadata
+  metadataDF <- dplyr::filter(metadataDF, Peptide %in% peptideSet)
+  df_meta <- dplyr::select(metadataDF, Peptide, ImmunogenicityScore)
+  if("Immunogenicity" %in% colnames(metadataDF)){
+    df_meta$Immunogenicity <- metadataDF$Immunogenicity
+    igraph::V(graph)$Immunogenicity <- df_meta$Immunogenicity
+  }
+  igraph::V(graph)$ImmunogenicityScore <- df_meta$ImmunogenicityScore
+
+  ## Clusters
+  set.seed(seed)
+  df_meta <- dplyr::left_join(
+    dplyr::tibble("Peptide"=peptideSet,
+                  "Target"=dplyr::if_else(peptideSet==peptide, "Target", "Neighbor"),
+                  "ClusterID"=paste0("Cluster", igraph::cluster_walktrap(graph)$membership)),
+    df_meta,
+    by="Peptide"
+  )
+
+  ## No plot ver.
+  if(plot!=T) return(df_meta)
+
+  ## Coordinates
+  set.seed(seed)
+  l <- igraph::layout_nicely(graph)
+  df_meta <- dplyr::left_join(
+    magrittr::set_colnames(cbind(dplyr::tibble("Peptide"=peptideSet), as.data.frame(l)), c("Peptide","x","y")),
+    df_meta,
+    by="Peptide"
+  )
+
+  ## Consensus per cluster
+  clusteredPeptides <- df_meta %>%
+    dplyr::arrange(ClusterID) %>%
+    dplyr::mutate(ClusterID=as.character(ClusterID)) %>%
+    data.table::as.data.table() %>%
+    split(by="ClusterID") %>%
+    lapply(function(d){d[["Peptide"]]})
+  consensusSequence <- function(sequenceSet){
+    if(length(sequenceSet)==1) return(sequenceSet)
+    sink(tempfile())
+    s <- msa::msaConsensusSequence(msa::msaClustalW(sequenceSet, type="protein"), type="Biostrings", ambiguityMap="X", threshold=0.5)
+    sink()
+    return(s)
+  }
+  clusterConsensusSeqs <- sapply(clusteredPeptides, consensusSequence)
+  clusterConsensusSeqs <- stringr::str_replace_all(clusterConsensusSeqs, stringr::fixed("-"), "X")
+
+  ## Graph plot
+  clusterGraphPlot <- function(g, meta, layout, seed=12345){
+    ### Vertex annotations
+    colPal <- function(x){
+      pal <- colorRamp(append(ggsci::pal_d3()(2), "white", after=1), space="rgb")
+      cols <- pal(x)
+      apply(cols, 1, function(x){rgb(x[1], x[2], x[3], maxColorValue=255)})
+    }
+    clusterColors <- meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(ImmunogenicityColor=colPal(mean(ImmunogenicityScore)))
+    clusterColors <- scales::alpha(clusterColors$"ImmunogenicityColor", alpha=0.75)
+    vertexColors <- colPal(meta$"ImmunogenicityScore")
+    if(is.null(meta$"Immunogenicity")){
+      vertexShapes <- "circle"
+    }else{
+      vertexShapes <- dplyr::if_else(meta$"Immunogenicity"=="Positive", "circle", "square")
+    }
+    vertexLabels <- igraph::V(g)$"label"
+
+    ### Cluster labels
+    clusterCentroids <- meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(x=mean(x), y=mean(y))
+    clusterCentroids$x <- scales::rescale(clusterCentroids$x, to=c(-1, 1))
+    clusterCentroids$y <- scales::rescale(clusterCentroids$y, to=c(-1, 1))
+
+    ### Graph
+    try(dev.off(), silent=T)
+    set.seed(seed)
+    plot(
+      igraph::cluster_walktrap(g), g,
+      layout=layout,
+      col=vertexColors,
+      mark.border="black",
+      mark.col=clusterColors,
+      vertex.size=3,
+      vertex.shape=vertexShapes,
+      vertex.label=vertexLabels,
+      vertex.label.color="black",
+      vertex.label.cex=1.25,
+      vertex.label.dist=0.5,
+      vertex.label.family="sans",
+      vertex.color=vertexColors,
+      vertex.frame.color="black",
+      edge.width=0.5,
+      edge.arrow.size=0.25,
+      edge.arrow.width=0.1,
+      edge.color=scales::alpha("gray50", 0.75)
+    )
+    for(i in 1:length(clusterCentroids$ClusterID)){
+      text(
+        rep(clusterCentroids$x[[i]], 2),
+        clusterCentroids$y[[i]]+c(0, -0.1),
+        c(clusterCentroids$ClusterID[[i]], clusterConsensusSeqs[[i]]),
+        pos=3, cex=1.25, family="sans"
+      )
+    }
+    return(recordPlot())
+  }
+  neighborPlot <- clusterGraphPlot(
+    g=graph,
+    meta=df_meta,
+    layout=l,
+    seed=seed
+  )
+  return(list(
+    "SummaryDF"=df_meta,
+    "NeighborPlot"=neighborPlot
+  ))
+}
+
+
+```
+
+
+# Run in silico mutagenesis analysis
+## Create datasets for visualisation
+- Creates Neighbor network datasets.
+
+```{r}
+FILEPATH = "NEIGHBOR_NETWORK_ANALYSIS_TRAPP_DELTA/"
+dir.create(FILEPATH)
+
+# For each unique WT wuhan peptide.
+for(i in 1:length(unique(FULL_PREDICTIONS_DT$Peptide))){
+  PEPTIDE = unique(FULL_PREDICTIONS_DT$Peptide)[i]
+  DATASET = FULL_PREDICTIONS_DT %>% filter(Peptide%in% PEPTIDE)
+  # Find the Wuhan scores across different pMHC
+  WUHAN_SCORE_DISTR = DATASET  %>% filter(Binder == "BINDER") %>% select(Peptide, Predicted_Binding, WuhanScore) %>% distinct() %>% mutate(Dataset="Wuhan") %>% dplyr::rename(Prediction=WuhanScore)
+  # Find the mutants
+  MT_SCORE_DIST = DATASET %>% select(AASeq2, Predicted_Binding, Prediction) %>% distinct() %>% mutate(Dataset="MT")%>% dplyr::rename(Peptide=AASeq2)
+  # For the original score across pMHC, take the mean
+  ORIG_SCORE=DATASET %>% filter(Binder == "BINDER") %>% select(Peptide, Predicted_Binding, WuhanScore) %>% distinct() %>% group_by(Peptide) %>% dplyr::summarise(ImmunogenicityScore=mean(WuhanScore))%>% ungroup()
+  # Average across MHC for each WT-MT unique sample
+  DATASET=DATASET%>% group_by(Peptide, AASeq2) %>% dplyr::summarise(ImmunogenicityScore=mean(Prediction))
+
+  # Generate the neighbour network
+  DATASET_NEIGHBOUR = DATASET %>% ungroup%>% select(!Peptide)%>% dplyr::rename(Peptide=AASeq2)
+  DATASET_NEIGHBOUR=DATASET_NEIGHBOUR %>% as.data.table
+  DATASET_NEIGHBOUR=ORIG_SCORE %>% rbind(DATASET_NEIGHBOUR)%>% as.data.table
+
+  nnet_ISM <- neighborNetwork(DATASET_NEIGHBOUR$Peptide, DATASET_NEIGHBOUR$ImmunogenicityScore)
+  PEPTIDE_FILEPATH= paste0(FILEPATH,"/",PEPTIDE,"/")
+  dir.create(PEPTIDE_FILEPATH)
+  saveRDS(nnet_ISM, file=paste0(PEPTIDE_FILEPATH,"/NeighborNetwork.rds"))
+
+  # Show the density of scores
+  DENSITY_PLT=WUHAN_SCORE_DISTR %>% rbind(MT_SCORE_DIST)%>%
+          ggdensity(x="Prediction",y="..density..",fill="Dataset")
+  ggsave(filename = paste0(PEPTIDE_FILEPATH,"/Density.pdf"))
+  seed=1234
+  # Create the cluster for neighbor network. As this is substitution based, this is clustered simply on position of mutation
+  nnet_ISM_cluster <- neighborNetwork_Cluster_Batch(nnet_ISM, DATASET_NEIGHBOUR[,.(Peptide,ImmunogenicityScore)],seed=seed)
+  # Create the featureDF
+  nnet_ISM_cluster_featureDF <- neighborNetwork_Cluster_FeatureDF(nnet_ISM_cluster, coreN=5)
+  nnet_ISM_cluster_featureDF=nnet_ISM_cluster_featureDF %>% mutate(Peptide_Type = ifelse(Peptide == PEPTIDE, "Original","InSilicoMutated"))
+
+  saveRDS(nnet_ISM_cluster, file.path(PEPTIDE_FILEPATH, "/NeighborNetwork_Cluster.rds"))
+  readr::write_csv(nnet_ISM_cluster_featureDF, file.path(PEPTIDE_FILEPATH, "NeighborNetwork_Cluster_FeatureDF.csv"))
+  gc();gc()
+  # Create Ogishi's summary DT. We don't use this really as it is messy.
+  summaryDT <- merge(DATASET_NEIGHBOUR[Peptide %in% PEPTIDE,]%>% mutate(Peptide_Type="Original"), nnet_ISM_cluster_featureDF[Peptide %in% PEPTIDE,], by=c("Peptide","Peptide_Type","ImmunogenicityScore"))
+  summaryDT[,EscapePotential:=ImmunogenicityScore_Cluster_Diff_Min]
+  summaryDT <- summaryDT[Peptide_Type=="Original", .(Peptide, ImmunogenicityScore, ImmunogenicityScore_Cluster_Average, EscapePotential)]
+  data.table::setorder(summaryDT, -ImmunogenicityScore, -ImmunogenicityScore_Cluster_Average, EscapePotential)
+  readr::write_csv(summaryDT, file.path(PEPTIDE_FILEPATH, "EpitopePrioritizationSummary.csv"))
+
+  }
+
+```
+
+
+
+```{r}
+
+neighborNetwork_ConnectedSubGraph <- function(neighborNetResult, peptide){
+  connectedPeptides <- c(
+    peptide,
+    dplyr::filter(neighborNetResult$"PairDF_DW", AASeq1==peptide)$"AASeq2",
+    dplyr::filter(neighborNetResult$"PairDF_DW", AASeq2==peptide)$"AASeq1"
+  )
+  connectedSubgraph <- igraph::induced_subgraph(
+    neighborNetResult$"NeighborNetwork_DW",
+    which(igraph::V(neighborNetResult$"NeighborNetwork_DW")$label %in% connectedPeptides)
+  )
+  return(connectedSubgraph)
+}
+```
+
+
+
+```{}
+# Link information about each simulated mutant with the corresponding WT-MT Prediction scores, given TRAP and/or imputation
+MUTATIONDATA = readRDS("INSILICO_MUTAGENESIS_WUHANOMICRON_SUB_MUTATIONDATA.rds")%>% dplyr::rename(AASeq2=VariantAlignment)
+
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT%>% left_join(MUTATIONDATA)
+
+#saveRDS(FULL_PREDICTIONS_DT, file="INSILICO_MUTAGENESIS_COMPILED_PREDICTIONS_SUBONLY_w_MUTATIONDATA.rds")
+
+```
+
+
+# Considering all mutations, which are the most impactful?
+
+- Calculate log ratio change between AASeq2 and Wuhan epitope.
+- Based on average log ratio changes for each mutation, take the top and bottom X% [mutations observed <20 times are excluded].
+
+
+```{}
+# Create logs ratios for each sample.
+# Poorly named: Prediction = Omicron overall immunogenicity score.
+FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% mutate(logsOdds = log(Prediction/WuhanScore))
+FULL_PREDICTIONS_DT = FULL_PREDICTIONS_DT %>% mutate(Length=nchar(Peptide))
+```
+
+
+
+```{}
+## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval:
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+```{}
+ # Color scheme based on chemistry of amino acids
+# Nicked from ggseqlogo
+         chemistry = data.frame(
+           letter = c('G', 'S', 'T', 'Y', 'C', 'N', 'Q', 'K', 'R', 'H', 'D', 'E', 'P', 'A', 'W', 'F', 'L', 'I', 'M', 'V'),
+           group = c(rep('Polar', 5), rep('Neutral', 2), rep('Basic', 3), rep('Acidic', 2), rep('Hydrophobic', 8)),
+           col = c(rep('#109648', 5), rep('#5E239D', 2), rep('#255C99', 3), rep('#D62839', 2), rep('#221E22', 8)),
+           stringsAsFactors = F
+         )
+
+```
+
+# 9MERS: TCR CONTACT
+- Analysing TCR contact positions
+
+```{,dpi=300}
+LENGTH=9
+POSITIONS = c(3,4,5,6,7,8)
+# Filter for TCR contact pos in 9mers
+# First, only look at positional effects
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)
+# Analyse
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("SeqMutationPos"))
+# Plot logs odds
+MUTS_DT%>%
+  ggplot(aes(x=reorder(SeqMutationPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Sequence Position")+ylab("Logs Odds ratio (MT/WT)")
+
+# color by chenistry
+colors = unique(chemistry$col) ; names(colors) = unique(chemistry$group)
+
+#Plot for ChangeFrom amino acid - 9mers.
+# Now, look at 'ChangeFrom' amino acid.
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFrom"))
+CF_MUTS_DT=MUTS_DT %>% mutate(letter = ChangeFrom) %>% inner_join(chemistry) %>% dplyr::rename(logsOdds_removal=logsOdds)
+
+NINE_CONTACT_FROM_PLT=MUTS_DT %>% mutate(letter = ChangeFrom) %>% inner_join(chemistry)%>%
+  ggplot(aes(x=reorder(ChangeFrom, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Amino acid (wildtype removal))")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+NINE_CONTACT_FROM_PLT
+
+#Plot for ChangeTo amino acid - 9mers.
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeTo"))
+CT_MUTS_DT=MUTS_DT %>% mutate(letter = ChangeTo) %>% inner_join(chemistry) %>% dplyr::rename(logsOdds_replacement=logsOdds)
+
+NINE_CONTACT_TO_PLT=MUTS_DT %>% mutate(letter = ChangeTo) %>% inner_join(chemistry)%>%
+  ggplot(aes(x=reorder(ChangeTo, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Amino acid (mutant replacement)")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+NINE_CONTACT_TO_PLT
+
+
+```
+
+```{,dpi=300}
+#Supplementary scatter plot
+CF_MUTS_DT=CF_MUTS_DT %>% select(letter, group, col, logsOdds_removal)
+CT_MUTS_DT=CT_MUTS_DT %>% select(letter, group, col, logsOdds_replacement)
+
+NINE_CONTACT_SCATTER_PLT=CF_MUTS_DT %>% inner_join(CT_MUTS_DT) %>%
+    ggplot(aes(x=logsOdds_removal, y=logsOdds_replacement, color=group))+geom_point()+
+    ggrepel::geom_text_repel(aes(label = letter,  color = group), size = 3)+theme_pubr(base_size = 16)+scale_color_manual(values=colors)+
+        ylab("Logs Odds Ratio (Replacement)")+xlab("Logs Odds Ratio (Removal)")+labs(color="chemistry")+guides(color=guide_legend(nrow=2,byrow=TRUE))
+```
+
+## Now analyse entire mutation of form A_X_B.
+
+
+```{,dpi=300,fig.width=16}
+
+# Top 5% of 9mer contact position mutations. I.e inducing most immunogenic changes.
+MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>% # Filter 9mer contact
+        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%  # Create mutation of form A_X_B
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>% # Summarise and !n<20
+        slice_max(order_by = meanlogsOdds, prop = 0.05) # Top 5%
+
+LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_min(order_by = meanlogsOdds, prop = 0.05) # min 5%
+
+# Bind mutations
+MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
+
+# Create the dataset based on above mutations and filter settings.
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
+        filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
+
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("Mutation"))
+# Create plot: NINEMER CONTACT, FULL MUTATION.
+
+NINE_CONTACT_TO_SPECIFICMUT_PLT=MUTS_DT%>% mutate(ChangeFrom = stringr::str_extract(Mutation,"[A-Z]\\_"))%>%
+        mutate(ChangeFrom = gsub("\\_", "", ChangeFrom))%>% mutate(letter = ChangeFrom) %>%
+        inner_join(chemistry)%>%
+        ggplot(aes(x=reorder(Mutation, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+        geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values = colors)
+NINE_CONTACT_TO_SPECIFICMUT_PLT
+
+```
+
+
+
+
+
+# 10MERS: TCR CONTACT
+- Analyse TCR contact positions of 10mers
+```{,dpi=300}
+
+LENGTH=10
+POSITIONS = c(3,4,5,6,7,8,9)
+# Analyse positional impact
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("SeqMutationPos"))
+MUTS_DT%>%
+  ggplot(aes(x=reorder(SeqMutationPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Sequence Position")+ylab("Logs Odds ratio (MT/WT)")
+
+# Analyse the effect simply of the 'ChangeFrom' amino acid
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFrom"))
+CF_MUTS_DT=MUTS_DT %>% mutate(letter = ChangeFrom) %>% inner_join(chemistry) %>% dplyr::rename(logsOdds_removal=logsOdds)
+
+TEN_CONTACT_FROM_PLT=MUTS_DT %>% mutate(letter = ChangeFrom) %>% inner_join(chemistry)%>%
+  ggplot(aes(x=reorder(ChangeFrom, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Amino acid (wildtype removal)")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+TEN_CONTACT_FROM_PLT
+saveRDS(TEN_CONTACT_FROM_PLT,file="TEN_CONTACT_FROM_PLT.rds")
+# Analyse the effect of the 'ChangeTo' amino acid
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeTo"))
+CT_MUTS_DT=MUTS_DT %>% mutate(letter = ChangeTo) %>% inner_join(chemistry) %>% dplyr::rename(logsOdds_replacement=logsOdds)
+
+TEN_CONTACT_TO_PLT=MUTS_DT %>% mutate(letter = ChangeTo) %>% inner_join(chemistry)%>%
+  ggplot(aes(x=reorder(ChangeTo, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+xlab("Amino acid (mutant replacement)")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+TEN_CONTACT_TO_PLT
+
+
+```
+
+```{,dpi=300}
+#Supplementary scatter plot
+CF_MUTS_DT=CF_MUTS_DT %>% select(letter, group, col, logsOdds_removal)
+CT_MUTS_DT=CT_MUTS_DT %>% select(letter, group, col, logsOdds_replacement)
+
+TEN_CONTACT_SCATTER_PLT=CF_MUTS_DT %>% inner_join(CT_MUTS_DT) %>%
+    ggplot(aes(x=logsOdds_removal, y=logsOdds_replacement, color=group))+geom_point()+
+    ggrepel::geom_text_repel(aes(label = letter,  color = group), size = 3)+theme_pubr(base_size = 16)+scale_color_manual(values=colors)+
+        ylab("Logs Odds Ratio (Replacement)")+xlab("Logs Odds Ratio (Removal)")+labs(color="chemistry")+guides(color=guide_legend(nrow=2,byrow=TRUE))
+TEN_CONTACT_SCATTER_PLT
+```
+
+##  Full mutation
+-A_X_B mutation form across TCR contact positionsof 10mers.
+```{,dpi=300,fig.width=12}
+
+# Top 10% of mutations as described previously.
+MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.10)
+# Bottom 10%
+LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_min(order_by = meanlogsOdds, prop = 0.10)
+
+MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
+
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
+        filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
+
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("Mutation"))
+
+MUTS_DT%>% mutate(ChangeFrom = stringr::str_extract(Mutation,"[A-Z]\\_"))%>%
+        mutate(ChangeFrom = gsub("\\_", "", ChangeFrom))%>% mutate(letter = ChangeFrom) %>% inner_join(chemistry)%>%
+        ggplot(aes(x=reorder(Mutation, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
+        geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values = colors)
+
+
+
+```
+
+## change from including position
+- TCR contact positions 10mer. ChangeFrom including position.
+- 30%
+
+```{,dpi=300,fig.width=10}
+# Top 30%
+MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)
+# Bottom 30%
+LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_min(order_by = meanlogsOdds, prop = 0.3)
+
+MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeFromPos)
+
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        filter(! SeqMutationPos == 0)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
+        filter(ChangeFromPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
+
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFromPos"))
+
+MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeFromPos,"[A-Z]"))%>% inner_join(chemistry)%>%
+  ggplot(aes(x=reorder(ChangeFromPos, -logsOdds), y=logsOdds, fill=group))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+
+```
+
+## change to including position
+- TCR contact positions 10mer. ChangeTo including position.
+- 30%
+
+```{,dpi=300,fig.width=12}
+
+MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)
+
+LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_min(order_by = meanlogsOdds, prop = 0.3)
+
+MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeToPos)
+
+MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
+        filter(! SeqMutationPos == 0)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        filter(ChangeToPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
+
+MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeToPos"))
+
+TEN_CONTACT_TO_AA_POS_PLT=MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeToPos,"[A-Z]"))%>%
+        inner_join(chemistry)%>%
+        ggplot(aes(x=reorder(ChangeToPos, -logsOdds), y=logsOdds, fill=group))+geom_bar(stat = "identity")+
+        geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
+TEN_CONTACT_TO_AA_POS_PLT
+
+```
+
+
+# Run Analysis
+- Create meighbor network visualisatons
+
+```{r,dpi=300, fig.width = 10, fig.height = 10}
+seed=1234
+FILEPATH = "NEIGHBOR_NETWORK_ANALYSIS_TRAPP_DELTA/"
+for(i in 1:length(unique(FULL_PREDICTIONS_DT$Peptide))){
+  # Grab required data
+  PEPTIDE = unique(FULL_PREDICTIONS_DT$Peptide)[i]
+  DATASET = FULL_PREDICTIONS_DT %>% filter(Peptide%in% PEPTIDE)
+  DATASET=DATASET%>% group_by(Peptide, AASeq2) %>% dplyr::summarise(ImmunogenicityScore=mean(Prediction))
+
+  DATASET_NEIGHBOUR = DATASET %>% ungroup%>% select(!Peptide)%>% dplyr::rename(Peptide=AASeq2)
+  DATASET_NEIGHBOUR=DATASET_NEIGHBOUR %>% as.data.table
+  SCORES=DATASET_NEIGHBOUR %>% mutate(Peptide_Type = ifelse(Peptide == PEPTIDE, "Original","InSilicoMutated"))
+  # Read in NNetwork
+  NEIGHBORNETWORK = readRDS(paste0(FILEPATH,"/",PEPTIDE,"/NeighborNetwork.rds"))
+  # Read in metadata
+  metadataDF = fread(paste0(FILEPATH,"/",PEPTIDE,"/NeighborNetwork_Cluster_FeatureDF.csv"))
+  peptide=PEPTIDE
+  # Below is ogishi code to create visualisation
+  graph=neighborNetwork_ConnectedSubGraph(NEIGHBORNETWORK, peptide)
+  ## Peptide labels
+  peptideLabels <- peptide
+  peptideSet <- igraph::V(graph)$"name"
+  igraph::V(graph)$label[!peptideSet %in% peptideLabels] <- ""
+
+  ## Metadata
+  metadataDF <- dplyr::filter(metadataDF, Peptide %in% peptideSet)
+  df_meta <- dplyr::select(metadataDF, Peptide, ImmunogenicityScore)
+  if("Immunogenicity" %in% colnames(metadataDF)){
+    df_meta$Immunogenicity <- metadataDF$Immunogenicity
+    igraph::V(graph)$Immunogenicity <- df_meta$Immunogenicity
+  }
+  igraph::V(graph)$ImmunogenicityScore <- df_meta$ImmunogenicityScore
+
+  set.seed(seed)
+  df_meta <- dplyr::left_join(
+    dplyr::tibble("Peptide"=peptideSet,
+                  "Target"=dplyr::if_else(peptideSet==peptide, "Target", "Neighbor"),
+                  "ClusterID"=paste0("Cluster", igraph::cluster_walktrap(graph)$membership)),
+    df_meta,
+    by="Peptide"
+  )
+## Coordinates
+  set.seed(seed)
+  l <- igraph::layout_nicely(graph)
+  df_meta <- dplyr::left_join(
+    magrittr::set_colnames(cbind(dplyr::tibble("Peptide"=peptideSet), as.data.frame(l)), c("Peptide","x","y")),
+    df_meta,
+    by="Peptide"
+  )
+
+  ## Consensus per cluster (these are output by Repitope!). We have more clusters for this peptide than reported in Ogishi et al. SAme insight however so maybe he reduced it for complexity
+  clusteredPeptides <- df_meta %>%
+    dplyr::arrange(ClusterID) %>%
+    dplyr::mutate(ClusterID=as.character(ClusterID)) %>%
+    data.table::as.data.table() %>%
+    split(by="ClusterID") %>%
+    lapply(function(d){d[["Peptide"]]})
+  consensusSequence <- function(sequenceSet){
+    if(length(sequenceSet)==1) return(sequenceSet)
+    sink(tempfile())
+    s <- msa::msaConsensusSequence(msa::msaClustalW(sequenceSet, type="protein"), type="Biostrings", ambiguityMap="X", threshold=0.5)
+    sink()
+    return(s)
+  }
+  clusterConsensusSeqs <- sapply(clusteredPeptides, consensusSequence)
+  clusterConsensusSeqs <- stringr::str_replace_all(clusterConsensusSeqs, stringr::fixed("-"), "X")
+
+  ## Graph plot
+ ### Vertex annotations
+    colPal <- function(x){
+      pal <- colorRamp(append(ggsci::pal_d3()(2), "white", after=1), space="rgb")
+      cols <- pal(x)
+      apply(cols, 1, function(x){rgb(x[1], x[2], x[3], maxColorValue=255)})
+    }
+layout=l
+g=graph
+
+  clusterColors <- df_meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(ImmunogenicityColor=colPal(mean(ImmunogenicityScore)))
+  clusterColors=clusterColors %>% mutate(ID=readr::parse_number(ClusterID))%>% arrange((ID)) %>% select(!ID)
+
+    clusterColors <- scales::alpha(clusterColors$"ImmunogenicityColor", alpha=0.75)
+    vertexColors <- colPal(df_meta$"ImmunogenicityScore")
+    if(is.null(df_meta$"Immunogenicity")){
+      vertexShapes <- "circle"
+    }else{
+      vertexShapes <- dplyr::if_else(df_meta$"Immunogenicity"=="Positive", "circle", "square")
+    }
+    vertexLabels <- igraph::V(g)$"label"
+
+ ### Cluster labels
+    clusterCentroids <- df_meta %>%
+      dplyr::group_by(ClusterID) %>%
+      dplyr::summarise(x=mean(x), y=mean(y))
+    clusterCentroids$x <- scales::rescale(clusterCentroids$x, to=c(-1, 1))
+    clusterCentroids$y <- scales::rescale(clusterCentroids$y, to=c(-1, 1))
+
+    set.seed(seed)
+    pdf(paste0(FILEPATH,"/",PEPTIDE,"/Plot.pdf"),width = 10,height=10)
+    plot(
+      igraph::cluster_walktrap(g), g,
+      layout=layout,
+      col=vertexColors,
+      mark.border="black",
+      mark.col=clusterColors,
+      vertex.size=3,
+      vertex.shape=vertexShapes,
+      vertex.label=vertexLabels,
+      vertex.label.color="black",
+      vertex.label.cex=1.25,
+      vertex.label.dist=0.5,
+      vertex.label.family="sans",
+      vertex.color=vertexColors,
+      vertex.frame.color="black",
+      edge.width=0.5,
+      edge.arrow.size=0.25,
+      edge.arrow.width=0.1,
+      edge.color=scales::alpha("gray50", 0.75)
+    )
+    for(i in 1:length(clusterCentroids$ClusterID)){
+      CLUSTER_IDS=data.table(CLUSTERID=paste0("Cluster",stringr::str_locate(clusterConsensusSeqs[[i]], "X")[1]))
+      CLUSTER_IDS=CLUSTER_IDS %>% mutate(CLUSTERID = replace(CLUSTERID, grepl("NA",CLUSTERID), ""))
+
+      text(
+        rep(clusterCentroids$x[[i]], 2),
+        clusterCentroids$y[[i]]+c(0.02, -0.1),
+        c(CLUSTER_IDS$CLUSTERID, clusterConsensusSeqs[[i]]),
+        pos=3, cex=1.25, family="sans"
+      )
+    }
+    dev.off()
+    gc();gc()
+
+
+
+}
+
+
+
+
+
+```
+
+
+
+
+# What are most escape prone epitopes?
+
+## V2 - taking a simply average.
+- This makes the most sense. Takes a simple average of all WTi-PMHCX - MTi-PMHCX log ratios.
+- This is what we want to achieve: for each WT epitope an indication of how mutation affects it
+```{,dpi=300, fig.width = 12}
+colPal <- function(x){
+      pal <- colorRamp(append(ggsci::pal_d3()(2), "white", after=1), space="rgb")
+      cols <- pal(x)
+      apply(cols, 1, function(x){rgb(x[1], x[2], x[3], maxColorValue=255)})
+    }
+
+WTMeans_DT=FULL_PREDICTIONS_DT %>% filter(Binder== "BINDER")%>% select(Peptide, Predicted_Binding,WuhanScore)%>% distinct()%>%group_by(Peptide)%>%
+        dplyr::summarise(WTMean = mean(WuhanScore))
+
+# Summarise the data per epitope. So for each epitope, average the logs odds.
+MUTS_DT=summarySE(FULL_PREDICTIONS_DT, measurevar="logsOdds", groupvars=c("Peptide"))
+MUTS_DT=MUTS_DT%>% inner_join(WTMeans_DT)
+MUTS_DT$ImmunogenicityColor=colPal(MUTS_DT$WTMean)
+MUTS_DT$ImmunogenicityColor = scales::alpha(MUTS_DT$ImmunogenicityColor, alpha=0.75)
+MUTS_DT=MUTS_DT %>% mutate(logsOdds=logsOdds * -1)
+MUTS_DT%>% select(Peptide, logsOdds, se)%>% dplyr::rename(EscapeScore=logsOdds) %>%
+        readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/WORKING_VERSION/Supplementary Tables/Table5_EscapeScores.csv")
+ESCAPE_POT_PER_PEPTIDE_PLT=MUTS_DT %>%
+  ggplot(aes(x=reorder(Peptide, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
+    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
+                  position=position_dodge(.9))+theme_pubr(base_size = 16)+rotate_x_text()+xlab("Peptide")+
+        ylab("Escape Score")#+ scale_fill_identity()+
+        #labs(fill="WT Immunogenicity")#+ theme(panel.background = element_rect(fill = '#E3E3E3'))
+ESCAPE_POT_PER_PEPTIDE_PLT
+
+
+```
+
+
+
+
+
+# Does fraction hydrophobicity correlate with transition potential?
+-  in TCR contact vs. anchor
+
+## EDA
+- Minor correlation between hydrophobicity in anchor positions and the transition potential
+
+
+```{}
+
+HYDROPHOBIC_RESIDUES=chemistry %>% filter(group == "Hydrophobic")%>% pull(letter)
+
+NINEMERS=MUTS_DT %>% filter(nchar(Peptide)==9) %>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=8))
+TENMERS = MUTS_DT %>% filter(nchar(Peptide)==10)%>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=9))
+
+MUTS_DT=NINEMERS %>% rbind(TENMERS)
+
+MUTS_DT=MUTS_DT %>% mutate(TCR_HydrophobicCount =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
+        mutate(TCR_HydroFraction = TCR_HydrophobicCount/nchar(TCRContact_Peptide))%>% select(!TCR_HydrophobicCount)
+
+MUTS_DT %>% ggscatter(x="logsOdds",y="TCR_HydroFraction", add = "reg.line",  # Add regressin line
+   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE) # Add correlation coefficient. see ?stat_cor)
+
+
+MUTS_DT=MUTS_DT %>% mutate(AnchorRes = stringr::str_remove(Peptide, TCRContact_Peptide))
+MUTS_DT=MUTS_DT %>% mutate(Anchor_HydrophobicCount =  stringi::stri_count_regex(MUTS_DT$AnchorRes, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
+        mutate(Anchor_HydroFraction = Anchor_HydrophobicCount/nchar(AnchorRes))%>% select(!Anchor_HydrophobicCount)
+
+```
+
+
+
+```{}
+chemistry %>% DT::datatable()
+```
+
+## Take a simpler approach: 9mers
+
+
+
+```{,dpi=300}
+
+
+HIGH_SET = MUTS_DT%>% slice_max(order_by = logsOdds, n=9) %>% mutate(Dataset = "High")
+LOW_SET = MUTS_DT%>% slice_min(order_by = logsOdds, n=9) %>% mutate(Dataset = "Negative")
+
+LOW_HIGH_DT= LOW_SET %>% rbind(HIGH_SET)
+
+my_comparisons = list(c("High","Negative"))
+
+
+```
+
+
+
+```{r}
+
+```
+### Look at fraction of polar, neutral, basic, acidic.
+
+```{,dpi=300,warning=FALSE}
+REMAINING_CHEMISTRY=chemistry #%>% filter(! group == "Hydrophobic")
+
+
+REMAINING_CHEMISTRY_MUTS_DT=foreach::foreach(i=1:length(unique(REMAINING_CHEMISTRY$group)), .combine = "rbind", .packages = c("dplyr","data.table"))%do% {
+  CHEMISTRY_GRP = unique(REMAINING_CHEMISTRY$group)[i]
+  CHEMISTRY_AAS = REMAINING_CHEMISTRY %>% filter(group == CHEMISTRY_GRP)%>% pull(letter)
+  MUTS_DT %>% select(Peptide,logsOdds, TCRContact_Peptide, AnchorRes)%>%
+          mutate(Anchor_Count =  stringi::stri_count_regex(MUTS_DT$AnchorRes, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
+          mutate(Anchor_Fraction = Anchor_Count/nchar(AnchorRes))%>% select(!Anchor_Count)%>% mutate(group=CHEMISTRY_GRP)%>%
+          mutate(TCRContact_Count =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
+          mutate(TCRContact_Fraction = TCRContact_Count/nchar(TCRContact_Peptide))%>% select(!TCRContact_Count)%>% mutate(group=CHEMISTRY_GRP)
+}
+
+LOW_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% LOW_SET$Peptide)%>% mutate(Dataset = "Negative")#
+HIGH_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% HIGH_SET$Peptide)%>% mutate(Dataset = "High")
+TOLERANT_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% c("TLACFVLAAV","YYHKNNKSW","FGEVFNATRF","QTGKIADYNY","QWNLVIGFLF","GEVFNATRF","FQPTNGVGY",
+                                                                    "SYQTQTNSPR","DSKVGGNYNY"))%>% mutate(Dataset = "Negligible")
+#TOLERANT_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% c("GEVFNATRF","SYQTQTNSPR","FGEVFNATRF","CNDPFLGVYY","HVSGTNGTK"))%>% mutate(Dataset = "Negligible")
+LOW_HIGH_DT= LOW_SET %>% rbind(HIGH_SET)%>% rbind(TOLERANT_SET)%>% mutate(Dataset = factor(Dataset, levels = c("High","Negligible","Negative")))
+
+HYDROPHOBICITY_ANCHORFREQ_PLT=LOW_HIGH_DT %>% filter(group == "Hydrophobic") %>%
+        ggviolin(x="Dataset",y="Anchor_Fraction",color="Dataset", add=c("boxplot","jitter"),trim=TRUE,palette = "jco")+
+        stat_compare_means(comparisons = my_comparisons, label="p.signif",tip.length = 0.05,label.y=1.09)+
+        theme_pubr(base_size = 16)+ylab("Freq. of hydrophobic residues") +
+        facet_grid(~group)
+HYDROPHOBICITY_ANCHORFREQ_PLT
+
+
+```
+
+## Compare mutagenesis analysis of groups
+- What separates Tolerant vs impaired? hlas bound? number of hlas?
+
+```{,dpi=300,warning=FALSE}
+
+HLA_TRANSITIONPOT_GRPS_PLT=FULL_PREDICTIONS_DT %>% inner_join(LOW_HIGH_DT %>% select(Peptide, Dataset) %>% distinct())%>%
+        group_by(Peptide, Dataset)%>%filter(Binder == "BINDER")%>%
+        dplyr::summarise(n=n_distinct(Predicted_Binding))%>%
+        ggboxplot(x="Dataset",y="n",add="jitter",color="Dataset",palette = "jco")+theme_pubr(base_size = 16)+stat_compare_means(comparisons = my_comparisons,label="p.signif")+ylab("# HLAs bound")
+HLA_TRANSITIONPOT_GRPS_PLT
+
+
+```
+
+## What residues and positions of e.g.. hydrophobic residues are enriched in grups?
+
+```{,dpi=300, fig.height = 18}
+
+NINE_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==9)
+NINE_LOW_HIGH_DT=NINE_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(NINE_LOW_HIGH_DT$Peptide,n=9,pattern = ""))
+TEN_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==10)
+TEN_LOW_HIGH_DT=TEN_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(TEN_LOW_HIGH_DT$Peptide,n=10,pattern = ""))
+
+
+```
+
+```{,dpi=300}
+
+NINEMER_AA_BACKGROUND=REMAINING_CHEMISTRY_MUTS_DT %>% select(Peptide)%>% distinct() %>% filter(nchar(Peptide)==9)
+NINEMER_AA_BACKGROUND=NINEMER_AA_BACKGROUND%>% cbind(stringr::str_split_fixed(NINEMER_AA_BACKGROUND$Peptide,n=9,pattern = ""))
+
+TENMER_AA_BACKGROUND=REMAINING_CHEMISTRY_MUTS_DT %>% select(Peptide)%>% distinct() %>% filter(nchar(Peptide)==10)
+TENMER_AA_BACKGROUND=TENMER_AA_BACKGROUND%>% cbind(stringr::str_split_fixed(TENMER_AA_BACKGROUND$Peptide,n=10,pattern = ""))
+
+BACKGROUND_AA_DISTR=NINEMER_AA_BACKGROUND %>% mutate("10"="-") %>% rbind(TENMER_AA_BACKGROUND)
+BACKGROUND_AA_DISTR=BACKGROUND_AA_DISTR%>%
+        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>% ungroup()
+
+SAMPLED_BACKGROUND_AA_DISTR=foreach::foreach(i=1:10, .combine = "rbind", .packages = c("dplyr","data.table"))%do% {
+    SAMPLED_PEPS=BACKGROUND_AA_DISTR %>% select(Peptide) %>% distinct()%>% sample_n(size=5)%>% pull(Peptide)
+    BACKGROUND_AA_DISTR %>% filter(Peptide %in% SAMPLED_PEPS)%>% group_by(letter)%>% dplyr::summarise(n=n())%>% mutate(ID=i)
+}
+
+SAMPLED_BACKGROUND_AA_DISTR=SAMPLED_BACKGROUND_AA_DISTR %>% mutate(Dataset = "CTRL")%>% select(!ID)%>% inner_join(chemistry %>% select(! col))
+
+AA_COMP_TRANSITIONPOT_GRPS=NINE_LOW_HIGH_DT%>% mutate("10"="-")%>% rbind(TEN_LOW_HIGH_DT)%>%
+        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>%
+        inner_join(chemistry)%>% group_by(Dataset, letter, group) %>% dplyr::summarise(n=n())%>%
+        rbind(SAMPLED_BACKGROUND_AA_DISTR)%>%
+        group_by(Dataset, letter, group)%>% dplyr::summarise(meanN=mean(n), sd=sd(n))%>%
+        filter(group == "Hydrophobic")%>%
+        ggplot(aes(x=letter, y=meanN, fill=Dataset))+geom_bar(stat="identity",position=position_dodge())+
+        geom_errorbar(aes(ymin=meanN-sd, ymax=meanN+sd), width=.2, position=position_dodge(.9))+
+        facet_wrap(~group,scales="free",nrow=1)+theme_pubr(base_size = 16)+ylab("Count")+xlab("Amino Acid")
+AA_COMP_TRANSITIONPOT_GRPS
+
+
+```
+
+# contact positions
+## 9mers
+
+```{,dpi=300}
+HYDRO_AA=chemistry %>% filter(group=="Hydrophobic")%>% pull(letter)
+
+LENGTH=9
+POSITIONS = c(3,4,5,6,7,8)
+
+MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+
+```
+
+
+
+## 10mers
+
+
+```{,dpi=300}
+LENGTH=10
+POSITIONS = c(3,4,5,6,7,8,9)
+
+MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+```
+
+# anchor
+
+## 9mers
+
+```{,dpi=300}
+HYDRO_AA=chemistry %>% filter(group=="Hydrophobic")%>% pull(letter)
+
+LENGTH=9
+POSITIONS = c(1,2,9)
+
+MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+
+```
+
+
+
+## 10mers
+
+
+```{,dpi=300}
+LENGTH=10
+POSITIONS = c(1,2,10)
+
+MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
+        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
+        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
+        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
+        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
+   conf.int = TRUE, # Add confidence interval
+   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
+   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
+        add="loess")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

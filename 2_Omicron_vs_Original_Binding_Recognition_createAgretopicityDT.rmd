@@ -18,6 +18,17 @@ library(stringdist)
 library(doParallel)
 
 ```
+```{r}
+
+
+WUHAN_PREDICTEDBINDING=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
+
+WUHAN_PREDICTEDBINDING=WUHAN_PREDICTEDBINDING %>% select(! c(nM, Aff_Binder, Length, HydrophobicCount, HydroFraction))
+WUHAN_PREDICTEDBINDING %>% head()
+WUHAN_PREDICTEDBINDING %>% separate_rows_(cols=c("Predicted_Binding", "Thalf(h)", "EL-score", "EL_Rank","BA-score","BA_Rank","Ave","Binder","nM_41"), sep=",")%>% dplyr::filter(Binder=="BINDER")%>% arrange(Predicted_Binding) %>%
+        readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/SUBMITTED/R_R/Supplementary Tables/Table1_ImmunogenicCoV2Eps_predictedHLAbinders.csv")
+
+```
 
 ## Useful functions
 
@@ -33,15 +44,11 @@ ClosestMatch2 = function(string, stringVector){
 ```
 
 ## Aims
-Question: If we look at ratios of binding (agretopicity), stability, and/or fraction of hydrophobicity, do we see any evidence of immune escape?
-
-## Method
-- I have already predicted binding of these class I CD8T epitoeps and their mutants to 50 class I alleles.
-- I read in all information.
+- Create a DT 'AgretopicityDT' for downstream analysis that fr each paired WT-MT observation betrween Wuhan and BA1, contains all antigen presentation metrics.
 
 
 # Read in Wuhan binding dataset
-- Sample of what the data look like.
+
 ```{r}
 
 WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
@@ -53,8 +60,8 @@ WUHAN_PEPTIDES_BINDING_SCORES %>% nrow
 
 
 
-# Read in Omicron mutanta binding dataset
-- Sample of what the data look like.
+# Read in Omicron mutants BA1 binding dataset
+
 ```{r}
 
 OMICRON_PEPTIDES_BINDING_SCORES=readRDS("OMICRON_PEPTIDES_BINDING_SCORES_V2.rds")
@@ -83,68 +90,27 @@ MUTATIONS %>% inner_join(WUHAN_PEPTIDES_BINDING_SCORES)%>% nrow
 MUTATIONS %>% inner_join(OMICRON_PEPTIDES_BINDING_SCORES) %>% nrow
 
 FULL_MUTATIONS_DT=MUTATIONS %>% inner_join(WUHAN_PEPTIDES_BINDING_SCORES) %>% inner_join(OMICRON_PEPTIDES_BINDING_SCORES)
-#FULL_MUTATIONS_DT %>% head %>% DT::datatable()
 
 #saveRDS(FULL_MUTATIONS_DT,file="FULL_MUTATIONS_BINDING.rds")
-# MUTATED+HOMOLOGOUS oeptide
-FULL_MUTATIONS_DT %>% filter(Peptide %in% "WLLWPVTLA")
-
-
-FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment) %>% distinct()
-
 
 ```
-
-
-
-
-# For alleles most affected, what mutations are observed?
-
-```{r,dpi=300, fig.width = 12,fig.height=12}
-SEQMUTPOS=FULL_MUTATIONS_DT%>% select(Peptide, VariantAlignment, start_pos,MutationPos)%>% separate_rows_(cols="MutationPos", sep=",")%>%mutate(MutationPos = as.numeric(MutationPos))%>%
-    mutate(SeqMutPos = ((MutationPos+1) -start_pos))
-
-
-```
-
-
-
-
 
 
 
 # Agretopicity
 
 ```{r}
-
-FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder) %>%
-        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41"),sep=",") %>% head
-
-FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder) %>%
-        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41"),sep=",")  %>% select(Peptide, VariantAlignment, Predicted_Binding)%>% distinct()%>% group_by(Peptide, VariantAlignment) %>% dplyr::summarise(n=n())
+# create DT. One row per WT-MT, so separate collapsed rows.
 
 AGRETOPICITY_DT=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Protein, Predicted_Binding, nM_41, MT_nM_41,Binder,MT_Binder) %>%
-        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>% mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))
-AGRETOPICITY_DT %>% head
-
+        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",") %>%
+        mutate(nM_41 = as.numeric(nM_41)) %>% mutate(MT_nM_41 = as.numeric(MT_nM_41))
 
 ```
 
-## Agretopicity: start simple, those that bind WT
-
-### look at distribution of agretopicity
-- What is the best way to visualise these data?
-- Both plots are histograms showing agretopicity of MT/WT affinities for Wuhan binding vs. Omicron.
-- Only peptides to alleles where binding is predicted to occur are shown. Plots are seperated by whether the MUTANT is predicted to bind.
-- Second is log10 scaled
-- Agretopicity > 1 shows worse omicron binding compared to original. Agretopicity == 1 is exactly the same. Agretopicity < 1 is better omicron binding compared to original
 
 ```{r,dpi=300}
 
 AGRETOPICITY_DT=AGRETOPICITY_DT %>% mutate(Agretopicity = MT_nM_41/nM_41)
-AGRETOPICITY_DT %>% filter(Binder == "BINDER") %>% head(100)
-
-AGRETOPICITY_DT %>% filter(Binder == "BINDER") %>% mutate(MT_Binder = paste0("MT_",MT_Binder)) %>% gghistogram(x="Agretopicity",y="..count..",bins=10)+facet_grid(~MT_Binder,scales="free")
-AGRETOPICITY_DT %>% filter(Binder == "BINDER") %>% mutate(MT_Binder = paste0("MT_",MT_Binder)) %>% gghistogram(x="Agretopicity",y="..count..",bins=10)+facet_grid(~MT_Binder,scales="free")+scale_x_log10()
 saveRDS(AGRETOPICITY_DT, "AGRETOPICITY_DT.rds")
 ```

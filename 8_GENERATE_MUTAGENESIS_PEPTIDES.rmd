@@ -25,13 +25,113 @@ ClosestMatch2 = function(string, stringVector){
 }
 ```
 
+
+
+```{r}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds") # read in the mutations
+
+```
+
 # INSILICO_MUTAGENESIS_WUHANOMICRON
-- produce subs, ins, del.
-```{}
+- produce subs, ins, dels for each epitope
+```{r}
 
-MUTATIONS
+INSILICO_MUTAGENESIS_WUHANOMICRON = foreach(i=1:length(unique(MUTATIONS$Peptide)), .combine = "rbind",.packages = c("data.table","dplyr"))%do%{
+  print(paste0("Processing epitope ",i," of ", length(unique(MUTATIONS$Peptide))))
+  EPITOPE_FOR_ANALYSIS = MUTATIONS$Peptide[i] # get the epitope
+  GENERATED_PEPTIDES = Repitope::InSilicoMutagenesis(MUTATIONS$Peptide[i]) # generate the mutations
+
+  DT=data.table(AASeq1=EPITOPE_FOR_ANALYSIS,AASeq2=GENERATED_PEPTIDES) # create a data table
+  DT=DT %>% mutate(Mut_type = case_when( # add a mutation type column
+    nchar(AASeq1) == nchar(AASeq2) ~ "Substitution", # if the length of original and mutant is the same it is a substitution
+    nchar(AASeq1) > nchar(AASeq2) ~ "Deletion", # if the length of original is less than mutant it is a deletion
+    nchar(AASeq2) > nchar(AASeq1) ~ "Insertion" # if the length of original is greater than mutant it is an insertion
+  ))
+    DT
+
+}
+saveRDS(INSILICO_MUTAGENESIS_WUHANOMICRON, file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+
+```
 
 
+
+```{r}
+INSILICO_MUTAGENESIS_WUHANOMICRON=readRDS( file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+
+Distinct_mutagenesis_DT=INSILICO_MUTAGENESIS_WUHANOMICRON%>% filter(Mut_type=="Substitution")%>% dplyr::rename(Peptide=AASeq1,VariantAlignment = AASeq2)%>% distinct() # get the distinct generated mutations
+
+calculateMutation_position_V2 <- function(str1, str2,start_pos) { # function to calculate the mutation position
+  require(Biostrings)
+  peptide = str1 # original peptide
+  variantalignment = str2 # mutated peptide
+  alignment = pairwiseAlignment(variantalignment,peptide) # align the original and mutated peptide
+  str1=as.character(aligned(pattern(alignment))) # get the aligned original peptide
+  str2=as.character(aligned(subject(alignment))) # get the aligned mutated peptide
+
+  str1vec <- unlist(strsplit(str1, "")) # split the original peptide into a vector of positions
+  str2vec <- unlist(strsplit(str2, "")) # split the mutated peptide into a vector of positions
+  iMut <- (1:length(str1vec))[str1vec != str2vec] # get the position of the mutation
+  MUTPOS = (start_pos-1)+iMut # calculate the mutation position
+  return(paste0(MUTPOS)) # return the mutation position
+}
+
+# Calculate the change from
+calculateMutation_changeFrom <- function(str1, str2,start_pos) { # function to calculate the change from - i.e change in original peptide
+  require(Biostrings)
+  peptide = str1 # original peptide
+  variantalignment = str2 # mutated peptide
+  alignment = pairwiseAlignment(variantalignment,peptide) # align the original and mutated peptide
+  str1=as.character(aligned(pattern(alignment))) # get the aligned original peptide
+  str2=as.character(aligned(subject(alignment))) # get the aligned mutated peptide
+
+  str1vec <- unlist(strsplit(str1, "")) # split the original peptide into a vector of positions
+  str2vec <- unlist(strsplit(str2, "")) # split the mutated peptide into a vector of positions
+  iMut <- (1:length(str1vec))[str1vec != str2vec] # get the position of the mutation
+  MUTPOS = (start_pos-1)+iMut # calculate the mutation position
+  return(paste0(str2vec[iMut])) # return the change from
+}
+
+# calculate change to
+calculateMutation_changeTo <- function(str1, str2,start_pos) {
+  require(Biostrings)
+  peptide = str1 # original peptide
+  variantalignment = str2 # mutated peptide
+  alignment = pairwiseAlignment(variantalignment,peptide) # align the original and mutated peptide
+  str1=as.character(aligned(pattern(alignment))) # get the aligned original peptide
+  str2=as.character(aligned(subject(alignment))) # get the aligned mutated peptide
+
+  str1vec <- unlist(strsplit(str1, "")) # split the original peptide into a vector of positions
+  str2vec <- unlist(strsplit(str2, "")) # split the mutated peptide into a vector of positions
+  iMut <- (1:length(str1vec))[str1vec != str2vec] # get the position of the mutation
+  MUTPOS = (start_pos-1)+iMut # calculate the mutation position
+  return(paste0(str1vec[iMut])) # return the change to
+}
+
+cl <- makeCluster(10) # create a cluster of 10 cores
+registerDoParallel(cl) # register the cluster
+MUTATIONDATA = foreach(i = 1:nrow(Distinct_mutagenesis_DT),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%dopar% {# loop through the distinct mutations and calculate the mutation position, change from and change to
+  mutations = paste0(calculateMutation_position_V2(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+  CHANGEFROM = paste0(calculateMutation_changeFrom(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+  CHANGETO = paste0(calculateMutation_changeTo(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
+
+  data.table(Peptide = Distinct_mutagenesis_DT$Peptide[i], VariantAlignment=Distinct_mutagenesis_DT$VariantAlignment[i], Protein = Distinct_mutagenesis_DT$Protein[i], SeqMutationPos = mutations, ChangeFrom=CHANGEFROM, ChangeTo=CHANGETO) # return the mutation data
+
+}
+parallel::stopCluster(cl) # stop the cluster
+saveRDS(MUTATIONDATA, file="INSILICO_MUTAGENESIS_WUHANOMICRON_SUB_MUTATIONDATA.rds") #
+```
+
+
+# process for delta mutations
+```{r}
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds") # read in the mutations
+DELTA_FULL_MUTATIONS_DT = readRDS("DELTA_FULL_MUTATIONS_DT.rds") # read in delta mutations
+MUTATIONS = DELTA_FULL_MUTATIONS_DT %>% select(Peptide)%>% filter(!Peptide %in% MUTATIONS$Peptide) # remove the original mutations from the delta dataset
+```
+
+```{r}
+#  process for delta
 INSILICO_MUTAGENESIS_WUHANOMICRON = foreach(i=1:length(unique(MUTATIONS$Peptide)), .combine = "rbind",.packages = c("data.table","dplyr"))%do%{
   print(paste0("Processing epitope ",i," of ", length(unique(MUTATIONS$Peptide))))
   EPITOPE_FOR_ANALYSIS = MUTATIONS$Peptide[i]
@@ -45,85 +145,41 @@ INSILICO_MUTAGENESIS_WUHANOMICRON = foreach(i=1:length(unique(MUTATIONS$Peptide)
   ))
     DT
 
-
-
 }
-saveRDS(INSILICO_MUTAGENESIS_WUHANOMICRON, file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+saveRDS(INSILICO_MUTAGENESIS_WUHANOMICRON, file = "INSILICO_MUTAGENESIS_WUHANDELTA.rds")
 
 ```
 
+```{r}
 
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% mutate(Length = nchar(AASeq1))%>%
+        dplyr::filter(Length %in% c(9,10)) # filter for 9 and 10mers
+```
+```{r}
+TEST_DATA_LOCATION = "NETMHCPAN_CLASSI_MUTAGENESIS_DELTA"
+# Loop through all files (organised by HLA) and combine.
+data_path <- TEST_DATA_LOCATION
+files <- dir(data_path, pattern = "NetMHC_Results.csv")
 
-```{}
-INSILICO_MUTAGENESIS_WUHANOMICRON=readRDS( file = "INSILICO_MUTAGENESIS_WUHANOMICRON.rds")
+data3 <- data_frame(file = files) %>%
+  mutate(file_contents = map(file,
+                             ~ fread(file.path(data_path, .),skip = 1))
+  )
 
-Distinct_mutagenesis_DT=INSILICO_MUTAGENESIS_WUHANOMICRON%>% filter(Mut_type=="Substitution")%>% dplyr::rename(Peptide=AASeq1,VariantAlignment = AASeq2)%>% distinct()
+Netmhcpanres <- unnest(data3)
+# Clean HLA info
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
+# Change 1/0 binary binder/nonbinder to english
+Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = "")) # Clean HLA allele.
 
-calculateMutation_position_V2 <- function(str1, str2,start_pos) {
-  require(Biostrings)
-  peptide = str1
-  variantalignment = str2
-  alignment = pairwiseAlignment(variantalignment,peptide)
-  str1=as.character(aligned(pattern(alignment)))
-  str2=as.character(aligned(subject(alignment)))
+NETMHC_CLASSI=Netmhcpanres
+# Determine a binder ourselves, by 2 threshold of BA Rank (instead of EL). Makes analysis of nM consistent with binding status.
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER"))
+# Calculate the nM from the BA score. BA score is 1-log(50k) of nM. Therefore, nM is 50k^ (1-BA score).
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(nM_41 = round(50000^(1-`BA-score`) ,digits=5))
 
-
-
-  str1vec <- unlist(strsplit(str1, ""))
-  str2vec <- unlist(strsplit(str2, ""))
-  iMut <- (1:length(str1vec))[str1vec != str2vec]
-  MUTPOS = (start_pos-1)+iMut
-  return(paste0(MUTPOS))
-}
-
-# Calculate the change from
-calculateMutation_changeFrom <- function(str1, str2,start_pos) {
-  require(Biostrings)
-  peptide = str1
-  variantalignment = str2
-  alignment = pairwiseAlignment(variantalignment,peptide)
-  str1=as.character(aligned(pattern(alignment)))
-  str2=as.character(aligned(subject(alignment)))
-
-
-
-  str1vec <- unlist(strsplit(str1, ""))
-  str2vec <- unlist(strsplit(str2, ""))
-  iMut <- (1:length(str1vec))[str1vec != str2vec]
-  MUTPOS = (start_pos-1)+iMut
-  return(paste0(str2vec[iMut]))
-}
-
-# calculate change toi
-calculateMutation_changeTo <- function(str1, str2,start_pos) {
-  require(Biostrings)
-  peptide = str1
-  variantalignment = str2
-  alignment = pairwiseAlignment(variantalignment,peptide)
-  str1=as.character(aligned(pattern(alignment)))
-  str2=as.character(aligned(subject(alignment)))
-
-
-
-  str1vec <- unlist(strsplit(str1, ""))
-  str2vec <- unlist(strsplit(str2, ""))
-  iMut <- (1:length(str1vec))[str1vec != str2vec]
-  MUTPOS = (start_pos-1)+iMut
-  return(paste0(str1vec[iMut]))
-}
-
-cl <- makeCluster(10)
-registerDoParallel(cl)
-MUTATIONDATA = foreach(i = 1:nrow(Distinct_mutagenesis_DT),.combine = rbind, .packages = c("dplyr","magrittr","data.table","Biostrings"))%dopar% {
-
-  mutations = paste0(calculateMutation_position_V2(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
-
-  CHANGEFROM = paste0(calculateMutation_changeFrom(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
-  CHANGETO = paste0(calculateMutation_changeTo(Distinct_mutagenesis_DT$Peptide[i],Distinct_mutagenesis_DT$VariantAlignment[i],1),collapse = ",")
-
-  data.table(Peptide = Distinct_mutagenesis_DT$Peptide[i], VariantAlignment=Distinct_mutagenesis_DT$VariantAlignment[i], Protein = Distinct_mutagenesis_DT$Protein[i], SeqMutationPos = mutations, ChangeFrom=CHANGEFROM, ChangeTo=CHANGETO)
-
-}
-parallel::stopCluster(cl)
-saveRDS(MUTATIONDATA, file="INSILICO_MUTAGENESIS_WUHANOMICRON_SUB_MUTATIONDATA.rds")
+NETMHC_CLASSI=NETMHC_CLASSI %>% dplyr::filter(BA_Rank<2)
+NETMHC_CLASSI %>% head(10)
+NETMHC_CLASSI %>% select(Peptide, BA_Rank, HLA_Allele) %>% dplyr::rename(Predicted_Binding=HLA_Allele)%>% mutate(Dataset="Delta_mutagenesis") %>% readr::write_csv(file="DELTA_INSILICO_MUTAGENESIS_PREDBINDING_OUT4TRAP.csv")
 ```

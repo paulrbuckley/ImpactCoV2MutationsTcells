@@ -32,12 +32,7 @@ ClosestMatch2 = function(string, stringVector){
 
 ```
 
-## Aims
-Question: If we look at ratios of binding (agretopicity), stability, and/or fraction of hydrophobicity, do we see any evidence of immune escape?
-
-## Method
-- I have alresady predicted binding of these class I CD8T epitoeps and their mutants to 50 class I alleles.
-- I read in all information.
+## This worksheet produces the BA1 supertype binding affinity analysis
 
 
 # Read in Wuhan binding dataset
@@ -47,22 +42,6 @@ Question: If we look at ratios of binding (agretopicity), stability, and/or frac
 WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
 WUHAN_PEPTIDES_BINDING_SCORES %>% head
 WUHAN_PEPTIDES_BINDING_SCORES %>% nrow
-
-
-```
-
-## For 9/10mers of the wuhan originals, what are dominant HLAs?
-
-```{r,dpi=300,fig.height=7}
-
-WUHAN_PEPTIDES_BINDING_SCORES%>% mutate(Length=nchar(Peptide)) %>% filter(Length%in% c(9,10))%>% select(Peptide, Predicted_Binding, Binder,Length) %>% separate_rows_(cols=c("Predicted_Binding", "Binder"), sep=",") %>% distinct() %>% group_by(Predicted_Binding,Binder,Length) %>%mutate(Length = as.character(Length))%>%
-    dplyr::summarise(n=n())%>% filter(Binder == "BINDER")%>% arrange(desc(n))%>%
-    ggbarplot(x="Predicted_Binding",y="n",fill="Length",position = position_dodge())+coord_flip()
-
-WUHAN_PEPTIDES_BINDING_SCORES%>% mutate(Length=nchar(Peptide)) %>% filter(Length%in% c(9,10))%>% select(Peptide, Predicted_Binding, Binder,Length) %>% separate_rows_(cols=c("Predicted_Binding", "Binder"), sep=",") %>% distinct() %>% filter(Predicted_Binding == "HLA-A0201")%>% group_by(Predicted_Binding,Binder,Length) %>%mutate(Length = as.character(Length))%>%
-    dplyr::summarise(n=n())%>% filter(Binder == "BINDER")%>% arrange(desc(n))
-
-
 
 ```
 
@@ -75,25 +54,6 @@ OMICRON_PEPTIDES_BINDING_SCORES=readRDS("OMICRON_PEPTIDES_BINDING_SCORES_V2.rds"
 OMICRON_PEPTIDES_BINDING_SCORES %>% head
 OMICRON_PEPTIDES_BINDING_SCORES %>% nrow
 
-
-```
-
-
-## For 9/10mers of the omicron mutants, what are dominant HLAs?
-- HLA-Bs and HLA-Cs.
-- only 7 bind A0201
-
-```{r,dpi=300,fig.height=7}
-
-OMICRON_PEPTIDES_BINDING_SCORES%>% mutate(Length=nchar(VariantAlignment)) %>% filter(Length%in% c(9,10))%>% select(VariantAlignment, MT_Predicted_Binding, MT_Binder,Length) %>% separate_rows_(cols=c("MT_Predicted_Binding", "MT_Binder"), sep=",") %>% distinct() %>% group_by(MT_Predicted_Binding,MT_Binder,Length) %>%mutate(Length = as.character(Length))%>%
-    dplyr::summarise(n=n())%>% filter(MT_Binder == "BINDER")%>% arrange(desc(n))%>%
-    ggbarplot(x="MT_Predicted_Binding",y="n",fill="Length",position = position_dodge())+coord_flip()
-
-OMICRON_PEPTIDES_BINDING_SCORES%>% mutate(Length=nchar(VariantAlignment)) %>% filter(Length%in% c(9,10))%>% select(VariantAlignment, MT_Predicted_Binding, MT_Binder,Length) %>% separate_rows_(cols=c("MT_Predicted_Binding", "MT_Binder"), sep=",") %>% distinct() %>% filter(MT_Predicted_Binding == "HLA-A0201")%>% group_by(MT_Predicted_Binding,MT_Binder,Length) %>%mutate(Length = as.character(Length))%>%
-    dplyr::summarise(n=n())%>% filter(MT_Binder == "BINDER")%>% arrange(desc(n))
-
-
-
 ```
 
 
@@ -102,7 +62,6 @@ OMICRON_PEPTIDES_BINDING_SCORES%>% mutate(Length=nchar(VariantAlignment)) %>% fi
 ```{r}
 MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
 MUTATIONS %>% mutate(Length = nchar(Peptide))%>% filter(Protein == 'surface glycoprotein') %>% filter(Length== 9)%>% nrow
-#MUTATIONS=MUTATIONS %>% group_by(Peptide, VariantAlignment,start_pos,Mutation) %>% dplyr::summarise(Protein = paste0(Protein, collapse = ","))
 
 ```
 
@@ -114,141 +73,46 @@ MUTATIONS %>% inner_join(WUHAN_PEPTIDES_BINDING_SCORES)%>% nrow
 MUTATIONS %>% inner_join(OMICRON_PEPTIDES_BINDING_SCORES) %>% nrow
 
 FULL_MUTATIONS_DT=MUTATIONS %>% inner_join(WUHAN_PEPTIDES_BINDING_SCORES) %>% inner_join(OMICRON_PEPTIDES_BINDING_SCORES)
-#FULL_MUTATIONS_DT %>% head %>% DT::datatable()
-
-#saveRDS(FULL_MUTATIONS_DT,file="FULL_MUTATIONS_BINDING.rds")
-# mUTATED+HOMOLOGOUS oeptide
-FULL_MUTATIONS_DT %>% filter(Peptide %in% "WLLWPVTLA")
-
-
-FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment) %>% distinct()
-FULL_MUTATIONS_DT %>% nrow
 
 DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Predicted_Binding, EL_Rank, MT_EL_Rank, Binder,MT_Binder) %>% separate_rows_(cols = c("Predicted_Binding","EL_Rank","MT_EL_Rank","Binder","MT_Binder"),sep=",")
 
-
-DATA_FOR_ANALYSIS %>% nrow
-
 ```
 
-##  Loss / gain plots for HLA A/B peptides
-
-- A/B asupertypes were mapped as of https://bmcimmunol.biomedcentral.com/articles/10.1186/1471-2172-9-1#Abs1
-- HLA C were inferred by using the representitive
-- Try HLA A/B first
-- Problem is 1) low sample number, and 2) not sure if just essentially plotting the distribution of binding in thw dataset. Some HLA alleles (captued by supertypes), will bind these peptides more, thus potentially captured in loss/gain more.
-- Need to think through more.
 
 ```{r}
-
-AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>% mutate(Allele = gsub("\\*","",Allele))%>% mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
-
-DATA_FOR_ANALYSIS%>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% nrow
-
-HLA_A_B_DATA_FOR_ANALYSIS =DATA_FOR_ANALYSIS%>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% mutate(EL_Rank = as.numeric(EL_Rank), MT_EL_Rank=as.numeric(MT_EL_Rank))
-
-HLA_A_B_DATA_FOR_ANALYSIS=HLA_A_B_DATA_FOR_ANALYSIS%>% mutate(LossGain = case_when(
-        (Binder == "BINDER" & MT_Binder == "NONBINDER") ~ "Loss",
-        (Binder == "NONBINDER" & MT_Binder == "NONBINDER") ~ "Same_NonBinder",
-        (Binder == "NONBINDER" & MT_Binder == "BINDER") ~ "Gain",
-        (Binder == "BINDER" & MT_Binder == "BINDER") ~ "Same_Binder"
-))
-
-HLA_A_B_DATA_FOR_ANALYSIS %>% filter(LossGain %in% c("Loss","Gain"))%>%group_by(HLA_Allele, LossGain) %>% dplyr::summarise(n=n())%>% inner_join(AB_SUPERTYPES)%>%
-        ggboxplot(x="LossGain",y="n",facet.by = "Supertype")+stat_compare_means(label="p.signif")
-
-
-```
-
-## Agretopicities grouped by sipertype
-- HLA C inferred
-
-```{r}
-
-DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT %>% select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder) %>% separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>% mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
-
-#DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES)%>%
-#        ggboxplot(x="Supertype",y="Agretopicity")+scale_y_log10()+rotate_x_text()
-# without hlac
-HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES) %>%
-filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
-
-HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(!HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% mutate(Supertype = str_extract(HLA_Allele,"HLA-C[0-9][0-9]"))%>%
-        mutate(Supertype = gsub("HLA\\-","",Supertype))%>%
-filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%
-        ggboxplot(x="Supertype",y="Agretopicity")+scale_y_log10()+geom_hline(yintercept = 1,linetype="dashed")+rotate_x_text()
-
+# Read AB supertypes
+AB_SUPERTYPES=fread("HLA_AB_SUPERTYPES.csv") %>% mutate(Allele = gsub("\\*","",Allele))%>%
+        mutate(Allele = paste0("HLA-",Allele))%>% dplyr::rename(HLA_Allele = Allele)
 
 ```
 
 
-
-
-```{r,dpi=300, fig.width = 10}
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%arrange((HLA_Allele))%>%
-        ggboxplot(x="HLA_Allele",y="Agretopicity",add="jitter")+scale_y_log10()+geom_hline(yintercept = 1,linetype="dashed")+rotate_x_text()
-
-```
-
-
-
-```{r,dpi=300, fig.width  = 11, fig.height = 7}
-
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>%
-        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif")+rotate_x_text(angle=45)+ylab("Binding Affinity (nM)")
-```
-
-
-
-## spike only?
+## spike only
 
 ```{r,dpi=300}
+# Get DT ready for analysis
+DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT %>% filter(Protein == "surface glycoprotein") %>% # filter spike
+        select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder) %>% # select columns and separate rows
+        separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>%
+        mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41) # clean cols
 
-DATA_FOR_ANALYSIS=FULL_MUTATIONS_DT %>% filter(Protein == "surface glycoprotein") %>% select(Peptide, VariantAlignment, Predicted_Binding, nM_41, MT_nM_41, Binder,MT_Binder) %>% separate_rows_(cols = c("Predicted_Binding","nM_41","MT_nM_41","Binder","MT_Binder"),sep=",")%>% mutate(nM_41 = as.numeric(nM_41), MT_nM_41=as.numeric(MT_nM_41))%>% mutate(Agretopicity = MT_nM_41/nM_41)
-
-DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES)%>%
-        ggboxplot(x="Supertype",y="Agretopicity")+scale_y_log10()+rotate_x_text()
-# without hlac
-HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>% inner_join(AB_SUPERTYPES) %>%
-filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
-
+# Process HLA-C separately. Use simply HLA-C:-X as superytype
+# HLA-A
+HLA_A_B_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>%
+        filter(HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T)) %>%
+        inner_join(AB_SUPERTYPES) %>%
+        filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
+# HLA-C
 HLA_CDATASET_AGRETOPICITY=DATA_FOR_ANALYSIS %>% dplyr::rename(HLA_Allele=Predicted_Binding)%>% filter(!HLA_Allele %in% grep("HLA-A|HLA-B",HLA_Allele,value = T))%>% mutate(Supertype = str_extract(HLA_Allele,"HLA-C[0-9][0-9]"))%>%
         mutate(Supertype = gsub("HLA\\-","",Supertype))%>%
 filter(! (Binder == "NONBINDER" & MT_Binder == 'NONBINDER'))
 
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%
-        ggboxplot(x="Supertype",y="Agretopicity")+scale_y_log10()+geom_hline(yintercept = 1,linetype="dashed")+rotate_x_text()
-
-
 ```
-
-```{r,dpi=300, fig.width = 10}
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>%arrange((HLA_Allele))%>%
-        ggboxplot(x="HLA_Allele",y="Agretopicity",add="jitter")+scale_y_log10()+geom_hline(yintercept = 1,linetype="dashed")+rotate_x_text()
-
-```
-
-```{r, dpi = 300, fig.width = 10}
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>% dplyr::rename(WT_Binder=Binder)%>%
-        pivot_longer(cols = c(WT_Binder, MT_Binder))%>%
-        group_by(Supertype, name,value) %>% dplyr::summarise(n=n())%>% filter(value == "BINDER")%>% ungroup%>% arrange(desc(n))%>% mutate(Supertype = forcats::fct_inorder(Supertype))%>%
-        ggbarplot(x="Supertype",y="n",fill="name",position = position_dodge())+rotate_x_text(angle=90)+ylab("# peptides w/ mutations in Omicron predicted to bind")
-
-```
-
 
 # spike only
 
-
 ```{r,dpi=300, fig.width  = 11, fig.height = 7}
-
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>%
-        ggpaired(cond1 = "nM_41", cond2 = "MT_nM_41",line.color = "gray")+facet_wrap(~Supertype,ncol=9)+scale_y_log10()+stat_compare_means(label = "p.signif")+rotate_x_text(angle=45)+ylab("Binding Affinity (nM)")
-
+# Create the BA1 Supertype plot: for certain supertypes plot changes in binding affinity between diff pmhc
 BA1_SUPERTYPE_BOXPLT=HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Supertype %in% c("A02","A03","B07","C01"))%>%
         dplyr::rename(Wuhan=nM_41, Omicron = MT_nM_41)%>%
         ggpaired(cond1 = "Wuhan", cond2 = "Omicron",line.color = "gray")+facet_wrap(~Supertype,nrow=1)+theme_pubr(base_size = 16)+scale_y_log10()+stat_compare_means(label = "p.signif",label.x.npc = "center")+rotate_x_text(angle=45)+ylab("Log10 Binding Affinity (nM)")
@@ -257,36 +121,5 @@ BA1_SUPERTYPE_BOXPLT
 saveRDS(BA1_SUPERTYPE_BOXPLT,file="BA1_SUPERTYPE_BOXPLT.rds")
 
 ```
-
-
-```{r}
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY)%>% filter(Supertype == 'B07') %>% arrange(desc(Agretopicity))
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>% dplyr::rename(WT_Binder=Binder)%>%
-        pivot_longer(cols = c(WT_Binder, MT_Binder))%>%
-        group_by(Supertype, name,value) %>% dplyr::summarise(n=n())%>% filter(value == "BINDER")%>% ungroup%>% arrange(desc(n))%>%filter(Supertype == 'B07')%>% arrange((n))%>%
-  mutate(pct_change = (n/lead(n) -1) * 100)
-
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>% dplyr::rename(WT_Binder=Binder)%>%
-        pivot_longer(cols = c(WT_Binder, MT_Binder))%>%
-        group_by(Supertype, name,value) %>% dplyr::summarise(n=n())%>% filter(value == "BINDER")%>% ungroup%>% arrange(desc(n))%>%filter(Supertype == 'A01')%>% arrange((n))%>%
-  mutate(pct_change = (n/lead(n) -1) * 100)
-
-
-
-
-```
-
-
-```{r, dpi = 300, fig.width = 10}
-HLA_A_B_AGRETOPICITY %>% rbind(HLA_CDATASET_AGRETOPICITY) %>% dplyr::rename(WT_Binder=Binder)%>%
-        pivot_longer(cols = c(WT_Binder, MT_Binder))%>%
-        group_by(Supertype, name,value) %>% dplyr::summarise(n=n())%>% filter(value == "BINDER")%>% ungroup%>% arrange(desc(n))%>% mutate(Supertype = forcats::fct_inorder(Supertype))%>%
-        ggbarplot(x="Supertype",y="n",fill="name",position = position_dodge())+rotate_x_text(angle=90)+ylab("# peptides w/ mutations in Omicron predicted to bind")
-
-```
-
-
 
 

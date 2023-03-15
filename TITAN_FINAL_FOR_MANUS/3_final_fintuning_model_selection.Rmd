@@ -1,0 +1,192 @@
+---
+title: "5_final_fintuning_model_selection"
+author: "pbuckley"
+date: '2022-04-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(janitor)
+library(doParallel)
+library(caret)
+library(stringdist)
+
+# Function to provide a closest match. Used to match HLA Alleles/V genes across mixed output styles.
+ClosestMatch2 = function(string, stringVector){
+
+  stringVector[amatch(string, stringVector, maxDist=Inf)]
+
+}
+```
+
+## Read in combinedData and stitchrcombined
+
+```{r}
+combinedData = fread("DATASETS/FINAL_ALL_TCR_EPITOPE_DATA_NOTPROCESSED_TCRFULL.csv") # read in combined data
+STITCHR_OUT_COMBINEDDATA = readRDS("DATASETS/STITCHR_COMBINEDDATA_OUT_PROCESSED.rds") # read in stitchr combined data
+```
+
+
+## Pre-process COMBINED DATA
+- clean the epitope-TCR dataset
+```{r}
+# Join combined data (TCRs-Peptides) with stitchr combined data (TCRs full sequence info)
+combinedData=combinedData %>% inner_join(STITCHR_OUT_COMBINEDDATA %>% select(TCR_ID, TRB_aa_no_leader_no_constant, TRBV, TRBJ)%>% distinct())
+combinedData=combinedData%>%filter(! tcr %in% grep("unproductive", tcr,value = T)) # remove unproductive TCRs
+
+combinedData=combinedData %>% dplyr::rename(cdr3=tcr) %>% dplyr::rename(tcr = TRB_aa_no_leader_no_constant) # rename tcr to cdr3 and tcr for full tcr sequence
+combinedData=combinedData %>% select(! SMILES) # remove SMILES column
+
+# PROTCHECK on Peptide and TCR
+TCR_DT = combinedData %>% select(tcr) %>% distinct # get unique TCRs
+PEPTIDE_DT = combinedData %>% select(Peptide) %>% distinct() # get unique Peptides
+
+# CHECK PEPTIDE SEQUENCE is valid
+VALIDSEQS=foreach(i=1:nrow(PEPTIDE_DT),.combine = "rbind", .packages = c("data.table","dplyr","protr"))%do% {
+  PEPTIDE=PEPTIDE_DT$Peptide[i]
+  VALID = protcheck(PEPTIDE)
+  data.table(Peptide=PEPTIDE, ValidSeq=VALID)
+}
+VALIDSEQS %>% select(ValidSeq) %>% table
+TO_EXCLUDE=VALIDSEQS %>% filter(ValidSeq==FALSE)%>% pull(Peptide)
+combinedData=combinedData %>% filter(! Peptide %in% TO_EXCLUDE) # Exclude peptides with invalid sequences
+
+# OUT ALL PEPTIDES FOR SMILES RUN
+#combinedData %>% select(Peptide) %>% distinct()%>%write.csv(file="ALL_PEPTIDES_SMILES.csv",quote=FALSE,row.names=FALSE)
+# manually run convertAAtosmiles.py on the above file
+# READ SMILES
+NEW_SMILES = fread("ALL_PEPTIDES_SMILESSMILES_OUT.csv") # read in SMILES
+combinedData=combinedData %>% drop_na() %>% inner_join(NEW_SMILES) # join SMILES to combined data
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds") # read in omicron mutations
+
+```
+
+
+# TRAIN MODEL: STITCHR OTB+POG+MIRA, ! OMI.
+- EXCLUDE Wuhan epitopes with a mutation in Omicron from training dataset
+## FILEPATH
+
+```{r}
+FILEPATH = "TRAIN_TITAN_OTB_FINAL_TEST_OTB_POGORELY_MIRA_NOWUHANMUT_100K_NO_OMI_NVE/" # FILEPATH for model
+N_TO_SAMPLE=100000 # Number of samples to take from combined data
+
+dir.create(FILEPATH)
+dir.create(paste0(FILEPATH,"/trained_model"))
+
+```
+
+
+```{r}
+# Loads of duplicates between new pogorely data and vdjdb. We only take one 
+subsetCombinedData = combinedData %>%select(tcr, Peptide, SMILES,label, Peptide_ID, TCR_ID,V_Gene,J_Gene, cdr3) %>% distinct()
+
+TCR_DT = subsetCombinedData %>% select(tcr) %>% distinct # get unique TCRs
+PEPTIDE_DT = subsetCombinedData %>% select(Peptide) %>% distinct() # get unique Peptides
+
+POGORELY_DATA = subsetCombinedData %>% inner_join(combinedData %>% filter(Dataset %in% 'Pogorely') ) %>%
+        select(tcr,cdr3, Peptide, SMILES,label, Peptide_ID, TCR_ID,V_Gene,J_Gene) %>% distinct()%>% filter(! Peptide %in% MUTATIONS$Peptide) # select data from pogorely and remove Wuhan-mutated
+
+MIRA_DATA = subsetCombinedData %>% inner_join(combinedData %>% filter(Dataset %in% 'MIRA') ) %>% # select data from MIRA
+        select(tcr,cdr3, Peptide, SMILES,label, Peptide_ID, TCR_ID,V_Gene,J_Gene) %>% distinct()%>%  # remove duplicates
+        filter(! Peptide %in% MUTATIONS$Peptide)%>% mutate(Length=nchar(Peptide))%>% filter(! Length<9)%>% # remove short peptides
+        sample_n(N_TO_SAMPLE) # sample N_TO_SAMPLE
+
+
+```
+
+## Pull epitopes-TCRs from original TITAN training data
+
+```{r}
+
+subsetCombinedData=subsetCombinedData%>% inner_join(fread("public/allinfo_full_data+covid.csv")%>% # find epitopes-TCRs from original TITAN training data
+                                                            dplyr::rename(Peptide = epitope_aa) %>% dplyr::rename(cdr3=tcr)%>% filter(label ==1)%>% # rename columns annd filtere for those determined to be immunogenic pairings
+                                                            select(Peptide, cdr3) %>% distinct() ) %>% # remove duplicates
+        filter(! Peptide %in% MUTATIONS$Peptide) # remove Wuhan-mutated epitopes
+
+subsetCombinedData=subsetCombinedData %>% rbind(POGORELY_DATA)%>% rbind(MIRA_DATA%>% select(!Length))%>% distinct() # bind all together and take unique set of epitoe-TCRs
+
+```
+
+
+# CREATE PEPTIDE SUBSET AND TCR SUBSET
+
+```{r}
+
+PEPTIDE_DT_FULL = subsetCombinedData %>% select(Peptide, Peptide_ID,SMILES)%>% distinct
+TCR_DT_FULL = subsetCombinedData %>% select(tcr, TCR_ID)%>% distinct
+
+```
+
+
+
+
+## Create NVE data
+- Create every possible combo of PEP --> TCR
+- get rid of the true TCR-peptide specificity combinations (anti join)
+- sample the number needed.
+```{r}
+N_SAMPLES=nrow(subsetCombinedData) # number of samples to take from combined data
+UNIQUE_DT=subsetCombinedData%>% select(Peptide_ID, TCR_ID)%>% distinct() # get unique TCR-peptide pairs
+
+EXPANDED_DATASET=subsetCombinedData%>% select(Peptide_ID, TCR_ID)%>% distinct() %>% # get unique TCR-peptide pairs
+        expand(Peptide_ID, TCR_ID)%>% anti_join(UNIQUE_DT) %>% sample_n(size = N_SAMPLES) # generate all possible TCR-peptide pairs and remove the true ones. Sample the number needed.
+
+
+# Link EXPANDED DATA with right peptide ids and smiles etc
+NVE_DATASET=EXPANDED_DATASET %>% inner_join(PEPTIDE_DT_FULL) %>% inner_join(TCR_DT_FULL)%>% mutate(label=0)%>% distinct() # get peptide and tcr ids and smiles and label as 0 i.e non-immunogenic
+
+subsetCombinedData=subsetCombinedData %>% select(! c(cdr3, V_Gene, J_Gene)) %>% rbind(NVE_DATASET)%>% distinct() # bind to original dataset and take unique set of epitoe-TCRs
+EXPANDED_DATASET=NULL
+gc()
+
+# Do some checks
+subsetCombinedData=subsetCombinedData %>% distinct()
+subsetCombinedData %>% select(label)%>% table
+subsetCombinedData%>% filter( Peptide %in% MUTATIONS$Peptide)
+
+```
+
+## Write out data in format required for TITAN
+
+```{r}
+
+#epitopes.smi
+subsetCombinedData %>% select(SMILES, Peptide_ID)%>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"epitopes.smi"), col_names = FALSE)
+
+subsetCombinedData %>% select(tcr, TCR_ID) %>% distinct()%>%
+  readr::write_tsv(file = paste0(FILEPATH,"tcr.csv"), col_names = FALSE)
+
+train <- subsetCombinedData %>% dplyr::sample_frac(.95)
+test  <- dplyr::anti_join(subsetCombinedData, train)
+
+train %>% select(Peptide_ID,TCR_ID,label) %>% dplyr::rename(ligand_name=Peptide_ID, sequence_id=TCR_ID)%>%
+  write.csv(file = paste0(FILEPATH,"train.csv"),row.names = TRUE)
+
+test %>% select(Peptide_ID,TCR_ID,label) %>% dplyr::rename(ligand_name=Peptide_ID, sequence_id=TCR_ID)%>%
+  write.csv(file = paste0(FILEPATH,"test.csv"),row.names = TRUE)
+
+system(paste0("cp public/trained_model/finetune_params.json ",FILEPATH))
+
+subsetCombinedData %>%
+  readr::write_tsv(file = paste0(FILEPATH,"Fulldataset.csv"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

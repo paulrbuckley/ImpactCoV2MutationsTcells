@@ -32,10 +32,11 @@ ClosestMatch2 = function(string, stringVector){
 ## Read in MUTANT TRAP SCORES
 - Generate 'FullDataset' i.e 'Peptide, Dataset, HLA, PredictionScore'. These are the score generated for mutants, which are single amino acid substitutions away from our Wuhan CoV2 targets ofinterest
 
+
 ```{r}
 
 # Read in TRAP predictoins
-FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt")%>% distinct()
+FullDataset=fread(cmd = "unzip -p TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt.zip")%>% distinct()
 # Read in information supplied to TRAP, to link pMHC with score. This includes all pMHC generated  via in silico mutagenesis
 INPUT_DATA_TRAPP=fread("MUTAGENESIS_SUBSET_OMI_WUHAN_HLA_RUN_CHL_DNN_V4_INC_SUBVAR_WTNB_MTBINDER_ALLCOV2_MUTAGENESIS.txt")%>%
          distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
@@ -52,18 +53,8 @@ FullDataset=FullDataset%>%dplyr::rename(Prediction=prediction)
 FullDataset=FullDataset %>% select(Peptide, Dataset, Predicted_Binding, Prediction)
 FullDataset=FullDataset %>% filter(Dataset == "Mutagenesis")
 
-#FullDataset %>% filter(Peptide %in% MUTATIONS$VariantAlignment)
-
-#FullDataset %>% filter(Peptide %in% "SHRRARSVA")
-
 ```
 
-
-```{r}
-
-FullDataset %>% select(Predicted_Binding) %>% table()
-
-```
 
 ## Get full dataset, all WT and MT.
 - We need to find all pMHC rank scores, to know what pMHC to include, exclude and impute.
@@ -76,30 +67,26 @@ FullDataset %>% select(Predicted_Binding) %>% table()
 # Class I OMICRON MUTANTS
 TEST_DATA_LOCATION = "NETMHCPAN_CLASSI_MUTAGENESIS/"
 
-data_path <- TEST_DATA_LOCATION
-files <- dir(data_path, pattern = "NetMHC_Results.csv")
+data_path <- TEST_DATA_LOCATION # set working directory
+files <- dir(data_path, pattern = "NetMHC_Results.csv") # get all files in the directory
 
-data3 <- data_frame(file = files) %>%
+data3 <- data_frame(file = files) %>% # create a data frame with the file names and file contents
   mutate(file_contents = map(file,
                              ~ fread(file.path(data_path, .),skip = 1))
   )
 
- Netmhcpanres <- unnest(data3)
- Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = ""))
- Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER"))
-Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = ""))
+Netmhcpanres <- unnest(data3)  # unnest the file contents
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=Netmhcpanres$file,pattern="Allele_|_NetMHC_Results.csv",replacement = "")) # Extract HLA Allele
+Netmhcpanres=Netmhcpanres %>% select(! c(file,Pos,ID,core,icore)) %>% mutate(Binder = ifelse(NB==1,"BINDER","NONBINDER")) # Remove unecessary columns and create a binder binary column
+Netmhcpanres=Netmhcpanres %>% mutate(HLA_Allele = gsub(x=HLA_Allele,pattern = "\\:",replacement = "")) # Remove : from HLA Allele
 
- NETMHC_CLASSI=Netmhcpanres
-NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(MT_nM_41 = round(50000^(1-`BA-score`) ,digits=5))
-NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER"))
-#NETMHC_CLASSI = NETMHC_CLASSI %>% filter(Binder == "BINDER")
+NETMHC_CLASSI=Netmhcpanres # Rename for clarity
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(MT_nM_41 = round(50000^(1-`BA-score`) ,digits=5)) # Calculate MT binding affinity in nM
+NETMHC_CLASSI=NETMHC_CLASSI %>% mutate(Binder = ifelse(BA_Rank>=2, "NONBINDER","BINDER")) # Create a binary column for binder/nonbinder based on BA rank
 
-
-NETMHC_CLASSI %>% head
-NETMHC_CLASSI %>% select(Peptide) %>% distinct()%>% nrow
-MUTAGENESIS_BINDERS=NETMHC_CLASSI %>% select(Peptide, HLA_Allele, BA_Rank,Binder)%>% mutate(Dataset="Mutagenesis")%>% distinct()
+MUTAGENESIS_BINDERS=NETMHC_CLASSI %>% select(Peptide, HLA_Allele, BA_Rank,Binder)%>% mutate(Dataset="Mutagenesis")%>% distinct() # Get all required columns
 MUTAGENESIS_BINDERS=MUTAGENESIS_BINDERS%>% dplyr::rename(Predicted_Binding=HLA_Allele, AASeq2=Peptide, MT_Binder=Binder, MT_BA_Rank = BA_Rank)
-NETMHC_CLASSI %>% filter(Peptide %in% "EELKKLLEQW")
+
 
 ```
 
@@ -107,9 +94,9 @@ NETMHC_CLASSI %>% filter(Peptide %in% "EELKKLLEQW")
 - Read in Wuhan set pMHC scores
 
 ```{r}
-MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds")
-WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds")
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% filter(Peptide %in% MUTATIONS$Peptide)
+MUTATIONS = readRDS("OMICRON_EPITOPE_MUTATIONS.rds") # Read in mutations
+WUHAN_PEPTIDES_BINDING_SCORES=readRDS("ORIGINAL_PEPTIDES_BINDING_SCORES_V2.rds") # read in original wuhan pMHC
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% filter(Peptide %in% MUTATIONS$Peptide) # Filter to only include pMHC with mutations in BA1
 
 WUHAN_PEPTIDES_BINDING_SCORES %>% head
 
@@ -118,17 +105,18 @@ WUHAN_PEPTIDES_BINDING_SCORES %>% head
 
 ```{r}
 # cleaning
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% select(Peptide, Predicted_Binding, BA_Rank, Binder)%>%
-        separate_rows_(cols = c("Predicted_Binding","BA_Rank","Binder"),sep=",")%>% mutate(Dataset = "WuhanTest")
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>%
+        select(Peptide, Predicted_Binding, BA_Rank, Binder)%>% # Select required columns
+        separate_rows_(cols = c("Predicted_Binding","BA_Rank","Binder"),sep=",")%>% mutate(Dataset = "WuhanTest") # Separate rows based on comma, and add a dataset column - labelled as WuhanTest
 
-WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% dplyr::rename(AASeq1=Peptide)%>% select(!Dataset)
+WUHAN_PEPTIDES_BINDING_SCORES=WUHAN_PEPTIDES_BINDING_SCORES %>% dplyr::rename(AASeq1=Peptide)%>% select(!Dataset) # Rename Peptide column to AASeq1, and remove dataset column (as AASeq1 is the wt peptide)
 ```
 
 
 - Read in Omicron mutated pMHC scores
 ```{r}
 
-OMI_PEPTIDES_BINDING_SCORES=readRDS("OMICRON_PEPTIDES_BINDING_SCORES_V2.rds")
+OMI_PEPTIDES_BINDING_SCORES=readRDS("OMICRON_PEPTIDES_BINDING_SCORES_V2.rds") # Read in Omicron pMHC scores
 OMI_PEPTIDES_BINDING_SCORES %>% head
 
 OMI_PEPTIDES_BINDING_SCORES=OMI_PEPTIDES_BINDING_SCORES %>% select(VariantAlignment, Predicted_Binding, MT_BA_Rank, MT_Binder)%>%
@@ -169,7 +157,7 @@ INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% left_joi
 -
 ```{r}
 INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON%>% filter(! (Binder == "NONBINDER" & MT_Binder == "NONBINDER"))
-INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% select(order(colnames(INSILICO_MUTAGENESIS_WUHANOMICRON)))
+INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% select(order(colnames(INSILICO_MUTAGENESIS_WUHANOMICRON))) #
 
 
 ```
@@ -197,12 +185,12 @@ ANTIJOIN_SET%>% mutate(GROUP = paste0(Binder, "_",MT_Binder))%>% select(GROUP) %
 ```
 ```{r}
 
-# Deal w binder binder. Somehow theyrer not in fulldataset, maybe we can't link them directly by matching nlog2Rank.
-# So find the scores and create the data
+# Deal w binder binder. we can't link them directly by matching nlog2Rank.
+# So find the correct scores and produce the data table
 BINDER_BINDER=ANTIJOIN_SET %>% mutate(GROUP = paste0(Binder, "_",MT_Binder)) %>% filter(GROUP=="BINDER_BINDER")
 
 BINDER_BINDER=BINDER_BINDER %>%
-        left_join(fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt")%>%
+        left_join(fread(cmd = "unzip -p TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt.zip")%>%
                           distinct()%>%
                           dplyr::rename(AASeq2=Peptide)) %>%
         select(AASeq1, AASeq2, BA_Rank, Binder, Length, MT_BA_Rank, MT_Binder, Mut_type, Predicted_Binding, prediction) %>%
@@ -211,10 +199,6 @@ BINDER_BINDER=BINDER_BINDER %>%
 # Deal w/ binder non-binder: impute a TRAP score of 0.01 for the MT.
 BINDER_NONBINDER = ANTIJOIN_SET%>% mutate(GROUP = paste0(Binder, "_",MT_Binder)) %>% filter(GROUP=="BINDER_NONBINDER")
 BINDER_NONBINDER = BINDER_NONBINDER %>% select(! GROUP) %>% mutate(Prediction=0.01)
-
-BINDER_NONBINDER%>% select(AASeq2, MT_BA_Rank, Predicted_Binding) %>%
-        dplyr::rename(Peptide=AASeq2, BA_Rank=MT_BA_Rank)%>% distinct() %>%
-        readr::write_csv(file="NONBINDERS_FOR_TRAPP_MUTAGENESIS.csv")
 
 ```
 
@@ -232,10 +216,10 @@ INSILICO_MUTAGENESIS_WUHANOMICRON=INSILICO_MUTAGENESIS_WUHANOMICRON %>% select(!
 
 ```{r}
 # FullDataset now contains the WT TRAP score.
-FullDataset=fread("TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt")%>% distinct()
+FullDataset=fread(cmd = "unzip -p TRAPP/DATA_V3_SARS2_ONLY/pred_scores/prott5_xl_bfd_peptides_sars2_mut_test_prediction_withlabel_2.txt.zip")%>% distinct()
 # Link to the specific pMHC via nlog2Rank. This is done because TRAP output lacks the particular MHC for which the observation was generated.
 INPUT_DATA_TRAPP=fread("MUTAGENESIS_SUBSET_OMI_WUHAN_HLA_RUN_CHL_DNN_V4_INC_SUBVAR_WTNB_MTBINDER_ALLCOV2_MUTAGENESIS.txt")%>%
-         distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
+        distinct()%>% mutate(BA_Rank = as.numeric(BA_Rank))%>%
         mutate(nlog2Rank = - log2(BA_Rank))
 
 INPUT_DATA_TRAPP=INPUT_DATA_TRAPP %>% mutate(nlog2Rank = round(nlog2Rank, digits=4))
@@ -269,7 +253,7 @@ FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% dplyr::rename(TRAPP_MUTANT_Predictio
 
 # Now, we want to produce an overall score incorporating both (TRAP score * MHC binding score)
 # MHCScore is produced by a negative logit function of the Rank score. X-2 as the threshold for 2 being the cutoff threshold for binding.
-# 1.5 selected abritrarily to reduce the magnitude of the curve.. so rank scores of e.g., 2.1 aren't treated as harshly as they may be with a higher value such as 5. We are here beign a little conservative.
+# 1.5 selected abritrarily to reduce the magnitude of the curve.. so rank scores of e.g., 2.1 aren't treated as harshly as they may be with a higher value such as 5.
 
 #negative logistic function
 neg_logit_function = function(x) {
@@ -294,15 +278,13 @@ FULL_PREDICTIONS_DT %>% group_by(Peptide)%>% dplyr::summarise(meanScore = mean(W
 # Remove likely FN
 FN_EPS=FULL_PREDICTIONS_DT %>% group_by(Peptide)%>% dplyr::summarise(maxScore = max(WuhanScore))%>% filter(maxScore < 0.45)%>% pull(Peptide)
 FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT%>% filter(! Peptide %in% FN_EPS)
-# Get rid of pMHC observations where WT and MT unlikely to be immunogenic.
+# Get rid of pMHC observations where WT and MT highly unlikely to be immunogenic. Less conservative here than previously, as more theoretical proof of principle analysis trying to retain as many samples as possible.
 FULL_PREDICTIONS_DT=FULL_PREDICTIONS_DT %>% filter(!(Prediction < 0.35 & WuhanScore < 0.35))
 
 FULL_PREDICTIONS_DT %>% dplyr::rename("Variant Peptide"=AASeq2, "HLA Allele"=Predicted_Binding,MutantScore=Prediction,TRAPP_Wuhan=TRAPP_Prediction)%>%
-    readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V9/WORKING_VERSION/Supplementary Tables/Table3_MutagenesisPredictions.csv")
+    readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/SUBMITTED/R_R/Supplementary Datafile/Table5_MutagenesisPredictions.csv")
 #saveRDS(FULL_PREDICTIONS_DT, file="INSILICO_MUTAGENESIS_COMPILED_PREDICTIONS_SUBONLY.rds")
 ```
-
-
 
 # Create neighbor network RDS files
 ## change functions
@@ -756,42 +738,19 @@ for(i in 1:length(unique(FULL_PREDICTIONS_DT$Peptide))){
 
 
 ```{r}
-
-neighborNetwork_ConnectedSubGraph <- function(neighborNetResult, peptide){
-  connectedPeptides <- c(
+# function to generate the neighbor network connecred sub graph
+neighborNetwork_ConnectedSubGraph <- function(neighborNetResult, peptide){ # peptide is the peptide of interest
+  connectedPeptides <- c( # find all the connected peptides
     peptide,
     dplyr::filter(neighborNetResult$"PairDF_DW", AASeq1==peptide)$"AASeq2",
     dplyr::filter(neighborNetResult$"PairDF_DW", AASeq2==peptide)$"AASeq1"
   )
-  connectedSubgraph <- igraph::induced_subgraph(
+  connectedSubgraph <- igraph::induced_subgraph( # produce the connected subgraph
     neighborNetResult$"NeighborNetwork_DW",
     which(igraph::V(neighborNetResult$"NeighborNetwork_DW")$label %in% connectedPeptides)
   )
   return(connectedSubgraph)
 }
-```
-
-
-
-
-```{}
-# Read in the summary dataset. This is generated by Ogishi and uses his 'escape potential' metric
-# I dont like this metric so i will use avg log ratios for each WT across all mutants
-list_of_files = list.files(path="NEIGHBOR_NETWORK_ANALYSIS_TRAPP/",
-                           recursive = T,
-                           pattern = "EpitopePrioritizationSummary.csv",
-                           full.names = T)
-
-EPITOPE_PRIORITIZATION_DT = list_of_files %>% purrr::map_df(fread)
-
-```
-- Variation in the escape potential of the single amino acid mutation eps in Omicron/
-- AQG* most escape prone?
-```{,dpi=300}
-
-EPITOPE_PRIORITIZATION_DT %>% ggplot(aes(x=reorder(Peptide, -EscapePotential), y=EscapePotential))+geom_bar(stat = "identity",fill="darkgrey")+theme_pubr()+
-  rotate_x_text()+xlab("Peptide")+ geom_hline(yintercept = 0.1, linetype="dashed",color="white")+ geom_hline(yintercept = 0.2, linetype="dashed",color="white")
-
 ```
 
 
@@ -866,105 +825,6 @@ summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
 }
 ```
 
-## 9MERS: ANCHOR
-- Due to the potential for HLA bias confounding the results for anchor positions, we analysed the effects of mutations in anchor and TCR contact positions separately
-- Look at entire mutation i.e A_X_B, removing amino acd 'A' from the wildtype (ChangeFrom), in position X (SeqMutPos), replacing with 'B' (ChangeTo).
-- Anchor positions not used in manuscript
-```{r,dpi=300,fig.width=15}
-LENGTH=9
-POSITIONS = c(1,2,9)
-# What are the mutations which on average cause biggest increases in immunogenicity? Take top 10%
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% # Filter anchor pos
-        filter(Length == LENGTH)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% # filter length. Define mutation
-        group_by(Mutation)%>% dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% # For each A_X_B mutation, take the mean logs odds.
-        arrange(desc(meanlogsOdds))%>% filter(! n<20)%>% # Exclude any samples with n<20
-        slice_max(order_by = meanlogsOdds, prop = 0.10) # Take top 10%
-
-# What are the mutations which on average cause biggest decreases in immunogenicity?Take bottom 10%
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>%
-        filter(Length == LENGTH)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-        group_by(Mutation)%>% dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>%
-        arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.10)
-
-# Create vector of this combined set of mutations of interest
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
-
-# Clean and curate the data of top/bottom 10%. Filter for positions of interest and appropriate peptide lengths. Get rid of SeqMutPos==0 if exists which is generated in old cases for earlier stat comparison.
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-        filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-# Create the summary statistics: what is mean logs odds for each mutation and SD/SE.
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("Mutation"))
-# Plot
-MUTS_DT%>%
-  ggplot(aes(x=reorder(Mutation, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-```
-
-## Change from
-- Look at the logs odds ratios, grouped by the ChangeFrom, i.e the amino acid removed from the widltype.
-- - not used in manus. EDA only.
-```{r,dpi=300,fig.width=10}
-## change from
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-  dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeFromPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>%
-        group_by(ChangeFromPos)%>% filter(ChangeFromPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFromPos"))
-
-MUTS_DT%>%
-  ggplot(aes(x=reorder(ChangeFromPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-
-
-```
-
-## Change to
-- Replacing amino acif in the mutant
-- EDA only.
-```{r,dpi=300,fig.width=10}
-## change to
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.30)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>%
-        filter(Length == LENGTH)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeToPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        filter(ChangeToPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeToPos"))
-
-MUTS_DT%>%
-  ggplot(aes(x=reorder(ChangeToPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-
-```
-
 ```{r}
  # Color scheme based on chemistry of amino acids
 # Nicked from ggseqlogo
@@ -1037,7 +897,6 @@ saveRDS(NINE_CONTACT_SCATTER_PLT,file="NINE_CONTACT_SCATTER_PLT.rds")
 
 ## Now analyse entire mutation of form A_X_B.
 
-
 ```{r,dpi=300,fig.width=16}
 
 # Top 5% of 9mer contact position mutations. I.e inducing most immunogenic changes.
@@ -1073,158 +932,6 @@ saveRDS(NINE_CONTACT_TO_SPECIFICMUT_PLT,file="NINE_CONTACT_TO_SPECIFICMUT_PLT.rd
 
 ```
 
-
-## change from including position
-- Look at 9mers ChangeFrom amino acid including position
-- Take 30% for 9mer contact.
-
-```{,dpi=300,fig.width=10}
-
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3) # Take top 30% of 'ChangeFrom' amino acids for 9mers in contact position
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3) # Take bottom 30% of 'ChangeFrom' amino acid changes for 9mers in contact pos.
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeFromPos)
-# Create DT.
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        filter(ChangeFromPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFromPos"))
-# Plot.
-MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeFromPos,"[A-Z]"))%>% inner_join(chemistry)%>%
-  ggplot(aes(x=reorder(ChangeFromPos, -logsOdds), y=logsOdds, fill=group))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
-
-
-```
-
-## change to including position
-- TCR contact positions 9mer. ChangeTo including position.
-- 30%
-```{,dpi=300,fig.width=12}
-
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3) # Take top 30%.
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeToPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        filter(ChangeToPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeToPos"))
-
-MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeToPos,"[A-Z]"))%>% inner_join(chemistry)%>%
-  ggplot(aes(x=reorder(ChangeToPos, -logsOdds), y=logsOdds, fill=group))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
-
-```
-
-# 10MERS: ANCHOR
-- EDA only.
-- Below is full mutation
-```{,dpi=300,fig.width=10}
-LENGTH=10
-POSITIONS = c(1,2,10)
-
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.05)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.05)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>%
-        filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-        filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("Mutation"))
-
-MUTS_DT%>%
-  ggplot(aes(x=reorder(Mutation, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-```
-
-## change from
-
-```{,dpi=300,fig.width=10}
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeFromPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        filter(ChangeFromPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFromPos"))
-
-MUTS_DT%>%
-  ggplot(aes(x=reorder(ChangeFromPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-```
-
-
-## change to
-
-```{,dpi=300,fig.width=10}
-
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeToPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        filter(ChangeToPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeToPos"))
-
-MUTS_DT%>%
-  ggplot(aes(x=reorder(ChangeToPos, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")
-
-```
 
 # 10MERS: TCR CONTACT
 - Analyse TCR contact positions of 10mers
@@ -1277,69 +984,8 @@ TEN_CONTACT_SCATTER_PLT
 saveRDS(TEN_CONTACT_SCATTER_PLT,file="TEN_CONTACT_SCATTER_PLT.rds")
 ```
 
-##  Full mutation
--A_X_B mutation form across TCR contact positionsof 10mers.
-```{r,dpi=300,fig.width=12}
-
-# Top 10% of mutations as described previously.
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.10)
-# Bottom 10%
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.10)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-        filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("Mutation"))
-
-MUTS_DT%>% mutate(ChangeFrom = stringr::str_extract(Mutation,"[A-Z]\\_"))%>%
-        mutate(ChangeFrom = gsub("\\_", "", ChangeFrom))%>% mutate(letter = ChangeFrom) %>% inner_join(chemistry)%>%
-        ggplot(aes(x=reorder(Mutation, -logsOdds), y=logsOdds,fill=group))+geom_bar(stat = "identity")+
-        geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values = colors)
 
 
-
-```
-
-## change from including position
-- TCR contact positions 10mer. ChangeFrom including position.
-- 30%
-
-```{r,dpi=300,fig.width=10}
-# Top 30%
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)
-# Bottom 30%
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_min(order_by = meanlogsOdds, prop = 0.3)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeFromPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>%
-        filter(! SeqMutationPos == 0)%>% mutate(ChangeFromPos=paste0(ChangeFrom,"_",  SeqMutationPos))%>% group_by(ChangeFromPos)%>%
-        filter(ChangeFromPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeFromPos"))
-
-MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeFromPos,"[A-Z]"))%>% inner_join(chemistry)%>%
-  ggplot(aes(x=reorder(ChangeFromPos, -logsOdds), y=logsOdds, fill=group))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Mutation")+ylab("Logs Odds ratio (MT/WT)")+scale_fill_manual(values=colors)
-
-```
 
 ## change to including position
 - TCR contact positions 10mer. ChangeTo including position.
@@ -1375,127 +1021,6 @@ saveRDS(TEN_CONTACT_TO_AA_POS_PLT,file="TEN_CONTACT_TO_AA_POS_PLT.rds")
 
 ```
 
-# Positional supplementary analysis.
-- Take most and least immunogenic epitopes and incrementlly count how many times a position is observed
-- is there a bias toward positions in most and leasy detrimental positoins?
-
-```{}
-PROP=0.30
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-  dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-  slice_max(order_by = meanlogsOdds, prop = PROP)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-  dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-  slice_min(order_by = meanlogsOdds, prop = PROP)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(ChangeToPos)
-
-MUTS_FOR_ANALYSIS_DT=FULL_PREDICTIONS_DT %>% filter(SeqMutationPos %in% POSITIONS) %>% filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-  filter(ChangeToPos %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))
-
-MUTS_DT=summarySE(MUTS_FOR_ANALYSIS_DT, measurevar="logsOdds", groupvars=c("ChangeToPos"))
-
-
-DT_FOR_BIAS_ANALYSIS=MUTS_DT%>% mutate(letter = stringr::str_extract(ChangeToPos,"[A-Z]"))%>% inner_join(chemistry)%>%arrange(desc(logsOdds))%>%
-  ungroup() %>% dplyr::mutate(ID=dplyr::row_number())%>% mutate(Position=readr::parse_number(ChangeToPos))
-
-DT_FOR_BIAS_ANALYSIS_OUT = foreach::foreach(i=1:(nrow(DT_FOR_BIAS_ANALYSIS)-4), .combine = "rbind")%do% {
-  DT_FOR_BIAS_ANALYSIS %>% filter(ID %in% seq(i,(i+4)))%>% group_by(Position) %>% dplyr::summarise(n=n())%>% mutate(ID=i)
-}
-
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")
-
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")
-
-POSITION=3
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-
-POSITION=4
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-
-
-POSITION=5
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-
-
-POSITION=6
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-
-
-POSITION=7
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-POSITION=8
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-POSITION=9
-DT_FOR_BIAS_ANALYSIS_OUT %>% ungroup() %>% tidyr::complete(Position, ID, fill=list(n=0))%>% ungroup()%>%mutate(Position=as.character(Position))%>%
-        filter(Position==POSITION)%>%
-        group_by(ID)%>% mutate(Freq=n/sum(n))%>%
-  ggline(x="ID",y="n",color="Position")#+ylim(0,5)
-
-
-
-```
-
-## OLD EDA, Ignore
-
-```{,dpi=300,fig.width=15}
-
-
-LENGTH=9
-
-MOST_IMM_MUTATIONS=FULL_PREDICTIONS_DT %>% filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-  dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<50)%>%
-  slice_max(order_by = meanlogsOdds, prop = 0.1)
-
-LEAST_IMM_MUTATIONS =FULL_PREDICTIONS_DT %>% filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>% group_by(Mutation)%>%
-  dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<50)%>%
-  slice_min(order_by = meanlogsOdds, prop = 0.1)
-
-MUTS_FOR_ANALYSIS=MOST_IMM_MUTATIONS %>% rbind(LEAST_IMM_MUTATIONS) %>% pull(Mutation)
-
-
-FULL_PREDICTIONS_DT  %>% filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-  filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))%>%
-  mutate(OmicronAASEQ2 = ifelse(AASeq2 %in% MUTATIONS$VariantAlignment, TRUE, FALSE))%>%
-  ggplot(aes(x=reorder(Mutation,-logsOdds),y=logsOdds,color=OmicronAASEQ2))+geom_point(aes(alpha=OmicronAASEQ2))+theme_pubr()+rotate_x_text()+geom_hline(yintercept = 1.0,linetype="dashed")+
-  scale_alpha_manual(values=c(0.2,1))+
-  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+xlab("Peptide")+ylab("Logs Odds (Mutant/Wild-type)")
-
-
-FULL_PREDICTIONS_DT  %>% filter(Length == LENGTH)%>% filter(! SeqMutationPos == 0)%>% mutate(Mutation=paste0(ChangeFrom,"_",  SeqMutationPos,"_",ChangeTo))%>%
-  filter(Mutation %in% MUTS_FOR_ANALYSIS)%>% arrange(desc(logsOdds))%>%
-  mutate(OmicronAASEQ2 = ifelse(AASeq2 %in% MUTATIONS$VariantAlignment, TRUE, FALSE)) %>% filter(OmicronAASEQ2==TRUE)%>% group_by(Mutation, Peptide) %>% dplyr::summarise(meanLogs = mean(logsOdds))
-
-```
 
 # Run Analysis
 - Create meighbor network visualisatons
@@ -1645,51 +1170,8 @@ g=graph
 ```
 
 
-
-
 # What are most escape prone epitopes?
-## V1
-- Take mean of pMHC for each WT-MT combo.
-- Then calculate log ratio and visualise mean+/se
-- This version was replaced as we're using the mean of a set of sample means here. Not accurate as different MT bind diffrent #s of MHC.
--
-```{,dpi=300, fig.width = 12}
-
-EPITOPE_ESCAPE_AVG=FULL_PREDICTIONS_DT %>% group_by(Peptide, AASeq2) %>% # For each WT-MT peptide combination.
-        dplyr::summarise(meanMTScore=mean(Prediction), meanWuhanScore=mean(WuhanScore))%>%  # Average the MT scores and the Wuhan
-        mutate(logsOdds = log(meanMTScore/meanWuhanScore)) %>% # Take the logs odds
-        mutate(OmicronAASEQ2 = ifelse(AASeq2 %in% MUTATIONS$VariantAlignment, TRUE, FALSE))
-
-# Summarise the data per epitope. Generate one mean logs odds across each epitope. Maybe rethink this. mean of a mean score
-MUTS_DT=summarySE(EPITOPE_ESCAPE_AVG, measurevar="logsOdds", groupvars=c("Peptide"))
-
-ESCAPE_POT_PER_PEPTIDE_PLT=MUTS_DT%>%
-  ggplot(aes(x=reorder(Peptide, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Logs Odds ratio (MT/WT)")
-ESCAPE_POT_PER_PEPTIDE_PLT
-saveRDS(ESCAPE_POT_PER_PEPTIDE_PLT,file="ESCAPE_POT_PER_PEPTIDE_PLT.rds")
-
-FULL_PREDICTIONS_DT %>% filter(Peptide %in% 'NGVEGFNCY')
-```
-
-
-# V4 - distance based escape potential
-
-```{}
-
-EPITOPE_ESCAPE_AVG=FULL_PREDICTIONS_DT %>% mutate(Score = WuhanScore-Prediction)
-# Summarise the data per epitope. Generate one mean logs odds across each epitope. Maybe rethink this. mean of a mean score
-MUTS_DT=summarySE(EPITOPE_ESCAPE_AVG, measurevar="Score", groupvars=c("Peptide"))
-
-ESCAPE_POT_PER_PEPTIDE_PLT=MUTS_DT%>%
-  ggplot(aes(x=reorder(Peptide, -Score), y=Score))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=Score-se, ymax=Score+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Avg change in immunogenicity")
-ESCAPE_POT_PER_PEPTIDE_PLT
-```
-
-## V2 - taking a simply average. Makes more sense surely?
+## V2 - taking a simply average.
 - This makes the most sense. Takes a simple average of all WTi-PMHCX - MTi-PMHCX log ratios.
 - This is what we want to achieve: for each WT epitope an indication of how mutation affects it
 ```{r,dpi=300, fig.width = 12}
@@ -1709,7 +1191,7 @@ MUTS_DT$ImmunogenicityColor=colPal(MUTS_DT$WTMean)
 MUTS_DT$ImmunogenicityColor = scales::alpha(MUTS_DT$ImmunogenicityColor, alpha=0.75)
 MUTS_DT=MUTS_DT %>% mutate(logsOdds=logsOdds * -1)
 MUTS_DT%>% select(Peptide, logsOdds, se)%>% dplyr::rename(EscapeScore=logsOdds) %>%
-        readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/WORKING_VERSION/Supplementary Tables/Table5_EscapeScores.csv")
+        readr::write_csv(file="/Users/paulbuckley/Nexus365/WIMM CCB - Koohy Group - Documents/Koohy Group/Effect_Mutation_Tcells/V11/SUBMITTED/R_R/Supplementary Datafile/Table6_EscapeScores.csv")
 ESCAPE_POT_PER_PEPTIDE_PLT=MUTS_DT %>%
   ggplot(aes(x=reorder(Peptide, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
     geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
@@ -1723,448 +1205,28 @@ saveRDS(ESCAPE_POT_PER_PEPTIDE_PLT,file="ESCAPE_POT_PER_PEPTIDE_PLT.rds")
 ```
 
 
-
-
-## V3
-- ignore
-```{,dpi=300, fig.width = 12}
-
-EPITOPE_ESCAPE_AVG=FULL_PREDICTIONS_DT %>% mutate(PMHClogsOdds = log(Prediction/WuhanScore)) %>% group_by(Peptide, AASeq2) %>%
-        dplyr::summarise(logsOdds=mean(PMHClogsOdds)) # Average the MT scores and the Wuhan
-
-# Summarise the data per epitope. Generate one mean logs odds across each epitope. Maybe rethink this. mean of a mean score
-MUTS_DT=summarySE(EPITOPE_ESCAPE_AVG, measurevar="logsOdds", groupvars=c("Peptide"))
-
-ESCAPE_POT_PER_PEPTIDE_PLT=MUTS_DT%>%
-  ggplot(aes(x=reorder(Peptide, -logsOdds), y=logsOdds))+geom_bar(stat = "identity")+
-    geom_errorbar(aes(ymin=logsOdds-se, ymax=logsOdds+se), colour="black", width=.5,                    # Width of the error bars
-                  position=position_dodge(.9))+theme_pubr(base_size = 12)+rotate_x_text()+xlab("Peptide")+ylab("Logs Odds ratio (MT/WT)")
-ESCAPE_POT_PER_PEPTIDE_PLT
-```
-
-
-
-# Does fraction hydrophobicity correlate with transition potential?
+# Does fraction hydrophobicity associate with transition potential?
 -  in TCR contact vs. anchor
 
-## EDA
-- Minor correlation between hydrophobicity in anchor positions and the transition potential
-
 
 ```{r}
 
-#CONTACT_POS=data.table(POSITIONS=c(3,4,5,6,7,8,9), Length=10)%>% rbind(
-#data.table(POSITIONS=c(3,4,5,6,7,8), Length=9))%>%
+HYDROPHOBIC_RESIDUES=chemistry %>% filter(group == "Hydrophobic")%>% pull(letter) # find hydrophobic residues
 
+NINEMERS=MUTS_DT %>% filter(nchar(Peptide)==9) %>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=8)) # get 9mers tcr contact positions
+TENMERS = MUTS_DT %>% filter(nchar(Peptide)==10)%>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=9)) # get 10mers tcr contact positions
 
-HYDROPHOBIC_RESIDUES=chemistry %>% filter(group == "Hydrophobic")%>% pull(letter)
-
-NINEMERS=MUTS_DT %>% filter(nchar(Peptide)==9) %>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=8))
-TENMERS = MUTS_DT %>% filter(nchar(Peptide)==10)%>% mutate(TCRContact_Peptide = substr(Peptide, start=3, stop=9))
-
-MUTS_DT=NINEMERS %>% rbind(TENMERS)
+MUTS_DT=NINEMERS %>% rbind(TENMERS) # combine to generate MUTS DT
 
 MUTS_DT=MUTS_DT %>% mutate(TCR_HydrophobicCount =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
-        mutate(TCR_HydroFraction = TCR_HydrophobicCount/nchar(TCRContact_Peptide))%>% select(!TCR_HydrophobicCount)
+        mutate(TCR_HydroFraction = TCR_HydrophobicCount/nchar(TCRContact_Peptide))%>% select(!TCR_HydrophobicCount) # calculate hydrophobicity fraction in TCr contact positions
 
-MUTS_DT %>% ggscatter(x="logsOdds",y="TCR_HydroFraction", add = "reg.line",  # Add regressin line
-   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE) # Add correlation coefficient. see ?stat_cor)
-
-
-MUTS_DT=MUTS_DT %>% mutate(AnchorRes = stringr::str_remove(Peptide, TCRContact_Peptide))
-MUTS_DT=MUTS_DT %>% mutate(Anchor_HydrophobicCount =  stringi::stri_count_regex(MUTS_DT$AnchorRes, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
-        mutate(Anchor_HydroFraction = Anchor_HydrophobicCount/nchar(AnchorRes))%>% select(!Anchor_HydrophobicCount)
-
-MUTS_DT %>% ggscatter(x="logsOdds",y="Anchor_HydroFraction", add = "reg.line",  # Add regressin line
-   add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE) # Add correlation coefficient. see ?stat_cor)
-
+MUTS_DT=MUTS_DT %>% mutate(NonContactRes = stringr::str_remove(Peptide, TCRContact_Peptide)) # get residues not in contact with TCR
+MUTS_DT=MUTS_DT %>% mutate(NC_HydrophobicCount =  stringi::stri_count_regex(MUTS_DT$NonContactRes, paste0(HYDROPHOBIC_RESIDUES,collapse = "|"))) %>%
+        mutate(NC_HydroFraction = NC_HydrophobicCount/nchar(NonContactRes))%>% select(!NC_HydrophobicCount) # calculate hydrophobicity fraction in non contact positions
 
 ```
 
-## Positional analysis: encode + XGBOOST
-- Trying to identify a link between features and outcome. I.E hydrophobicity in PX vs. Transition potential.
-- To do this we can analyse by XGBOOST. Robust to correlations in the data
-- First, create a DT with: Peptide, P1, P2, P3, P4. Each PX entry contains AA in that position.
-- dummy contrast encode the data, based on hydrophobicity or not in p1, p2, p3, p4.
-- Build a model and Use feature importance to determine any ;link between features and logs outs
-### Start w/ 9mers: XGBOOST on Hydrophbic amino acid in PX.
-#### Linear regression using continuous target
-
-- Catgeorical variables binary encoded (dummy contrasted).
-- Predicting logs odds: using a linear regression
-- Result: Perhap hydrophobicity in P7 is related?
--
-```{r}
-# Predict 9mers: logsOdds by categorical variables
-library(Matrix)
-library(xgboost)
-#stringr::str_split_fixed(TENMERS$Peptide,n=10,pattern = "")
-
-NINEMERS_AA_PX_DT=data.table(Peptide=NINEMERS$Peptide, logsOdds=NINEMERS$logsOdds) %>% cbind(stringr::str_split_fixed(NINEMERS$Peptide,n=9,pattern = ""))
-#NINEMERS_AA_PX_DT %>% mutate(across(starts_with("V"), ~ifelse(.x=="A", "Hydrophobic","!Hydrophobic")))
-
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT%>% as.data.table()%>%
-        mutate(V1 = ifelse(V1 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V2 = ifelse(V2 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V3 = ifelse(V3 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V4 = ifelse(V4 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V5 = ifelse(V5 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V6 = ifelse(V6 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V7 = ifelse(V7 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V8 = ifelse(V8 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V9 = ifelse(V9 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))
-
-NINEMERS_AA_PX_MATRIX = NINEMERS_AA_PX_DT %>% select(!Peptide)
-sparse_matrix = sparse.model.matrix(logsOdds ~ ., data = NINEMERS_AA_PX_MATRIX)[,-1]
-
-bst = xgboost(data=sparse_matrix, label = NINEMERS_AA_PX_DT$logsOdds, eta=0.1, objective="reg:linear",max_depth=4,nthread=2, nrounds=15)
-importance = xgb.importance(feature_names = colnames(sparse_matrix), model = bst)
-importance
-
-xgb.plot.importance(importance_matrix = importance)
-
-
-
-
-```
-
-#### logistic using binary target
-- Not clear. Different results based on different model predictor.
--
-```{r}
-# Predict 9mers: binary outcome binary input
-
-#stringr::str_split_fixed(TENMERS$Peptide,n=10,pattern = "")
-
-NINEMERS_AA_PX_DT=data.table(Peptide=NINEMERS$Peptide, logsOdds=NINEMERS$logsOdds) %>% cbind(stringr::str_split_fixed(NINEMERS$Peptide,n=9,pattern = ""))
-#NINEMERS_AA_PX_DT %>% mutate(across(starts_with("V"), ~ifelse(.x=="A", "Hydrophobic","!Hydrophobic")))
-
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT%>% as.data.table()%>%
-        mutate(V1 = ifelse(V1 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V2 = ifelse(V2 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V3 = ifelse(V3 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V4 = ifelse(V4 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V5 = ifelse(V5 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V6 = ifelse(V6 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V7 = ifelse(V7 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V8 = ifelse(V8 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V9 = ifelse(V9 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))
-
-NINEMERS_AA_PX_MATRIX = NINEMERS_AA_PX_DT %>% select(!Peptide)
-sparse_matrix = sparse.model.matrix(logsOdds ~ ., data = NINEMERS_AA_PX_MATRIX)[,-1]
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT%>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-bst = xgboost(data=sparse_matrix, label = NINEMERS_AA_PX_DT$BINARY_OUT, eta=1, objective="binary:logistic",max_depth=4,nthread=2, nrounds=15)
-importance = xgb.importance(feature_names = colnames(sparse_matrix), model = bst)
-importance
-
-xgb.plot.importance(importance_matrix = importance)
-
-NINEMERS_AA_PX_DT=data.table(Peptide=NINEMERS$Peptide, logsOdds=NINEMERS$logsOdds) %>% cbind(stringr::str_split_fixed(NINEMERS$Peptide,n=9,pattern = ""))
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT%>% as.data.table()%>%
-        mutate(V1 = ifelse(V1 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V2 = ifelse(V2 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V3 = ifelse(V3 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V4 = ifelse(V4 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V5 = ifelse(V5 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V6 = ifelse(V6 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V7 = ifelse(V7 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V8 = ifelse(V8 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V9 = ifelse(V9 %in% HYDROPHOBIC_RESIDUES, 1,0))
-
-
-#linear_model = lm(formula = logsOdds ~ V1+V2+V3+V4+V5+V6+V7+V8+V9, data=NINEMERS_AA_PX_DT)
-#summary(linear_model)
-
-
-```
-
-
-#### Use boruta for feature importance
-- First graph shows variables (binarised hydrophobicity in PX) including anchor and TCR hydrofraction vs. logs odds score
-- Second graph shows variables (binarised hydrophobicity in PX) including anchor and TCR hydrofraction vs. binarised outcome.
-- Looking at binarised outcome suggests V7 again. Consistent with XGBOOST, but different predictor.
-- Not the most conclusive evidence
-
-```{r}
-library(Boruta)
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT %>% inner_join(MUTS_DT %>% select(Peptide, Anchor_HydroFraction, TCR_HydroFraction))%>%
-        dplyr::rename(AnchorHydro=Anchor_HydroFraction, TCRHydro=TCR_HydroFraction)
-NINEMERS_AA_PX_DT_FULL=NINEMERS_AA_PX_DT
-# Boruta using logsOdds out
-boruta_output <- Boruta(logsOdds ~ ., data=NINEMERS_AA_PX_DT%>% select(! Peptide), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-# Using binary output
-NINEMERS_AA_PX_DT=NINEMERS_AA_PX_DT %>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-boruta_output <- Boruta(BINARY_OUT ~ ., data=NINEMERS_AA_PX_DT%>% select(! c(Peptide, logsOdds)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-```
-
-#### Try one hot code amino acid positions
-- One hot encode the presence of an amino acid at PX in WT.
-- V9Y means the wildtype has a Y in P9 of the sequence
-- A3, R3, Q4, 9Y potentially predictive vs. logs odds
-```{r}
-library(mltools)
-NINEMERS_AA_PX_DT=data.table(Peptide=NINEMERS$Peptide, logsOdds=NINEMERS$logsOdds) %>% cbind(stringr::str_split_fixed(NINEMERS$Peptide,n=9,pattern = ""))
-
-NINEMERS_AA_ONEHOT=caret::dummyVars(" ~ . ", NINEMERS_AA_PX_DT %>% select(! c(Peptide, logsOdds)))
-newdata <- data.frame(predict(NINEMERS_AA_ONEHOT, newdata = NINEMERS_AA_PX_DT %>% select(! c(Peptide, logsOdds))))
-
-NINEMERS_AA_ONEHOT=NINEMERS_AA_PX_DT %>% select(Peptide, logsOdds)%>% cbind(newdata)
-NINEMERS_AA_ONEHOT=NINEMERS_AA_ONEHOT %>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-colnames(NINEMERS_AA_ONEHOT) = gsub("V","",colnames(NINEMERS_AA_ONEHOT))
-NINEMERS_AA_PX_DT_FULL=NINEMERS_AA_PX_DT_FULL %>% inner_join(NINEMERS_AA_ONEHOT)
-
-boruta_output <- Boruta(logsOdds ~ ., data=NINEMERS_AA_ONEHOT%>% select(! c(Peptide, BINARY_OUT)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-```
-
-- nothing predictive using binary out
--
-```{r}
-boruta_output <- Boruta(BINARY_OUT ~ ., data=NINEMERS_AA_ONEHOT%>% select(! c(Peptide, logsOdds)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-
-```
-
-
-##### AA composition
-
-- Existence of 'N' in sequence is perhaps predictive.
-
-```{r}
-# Simply AA composition
-
-AACOMP_DT_NINEMERS=foreach::foreach(i=1:nrow(NINEMERS_AA_PX_DT),.combine = "rbind", .packages = c("dplyr","data.table","protr"))%do% {
-  PEPTIDE = NINEMERS_AA_PX_DT %>% filter(row_number()==i) %>% pull(Peptide)
-  AA_COMP = protr::extractAAC(PEPTIDE)
-  DT=NINEMERS_AA_PX_DT %>% filter(row_number()==i) %>% select(Peptide, logsOdds)
-  AA_COMP_DT= t(AA_COMP) %>% tibble::as.tibble()
-  DT %>% cbind(AA_COMP_DT)
-}
-
-boruta_output <- Boruta(logsOdds ~ ., data=AACOMP_DT_NINEMERS%>% select(! c(Peptide)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-linear_model = lm(formula = logsOdds ~ G+S+T+Y+C+N+Q+K+R+H+D+E+P+A+W+F+L+I+M+V, data=AACOMP_DT_NINEMERS)
-summary(linear_model)
-
-```
-
-#### combine all predictors for 9mers
-- Presence of N in wild type and existence of A in P3, A in P4, Q in P4, Y in P9 are perhaps predictive.
-
-```{r}
-# cmobine everything
-NINEMERS_AA_PX_DT_FULL=NINEMERS_AA_PX_DT_FULL %>% inner_join(AACOMP_DT_NINEMERS)
-boruta_output <- Boruta(logsOdds ~ ., data=NINEMERS_AA_PX_DT_FULL%>% select(! c(Peptide, BINARY_OUT)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-```
-
-
-## Same analysis for 10mers
-### XGBOOST
-- No obvious results
-
-```{r}
-TENMERS_AA_PX_DT=data.table(Peptide=TENMERS$Peptide, logsOdds=TENMERS$logsOdds) %>% cbind(stringr::str_split_fixed(TENMERS$Peptide,n=10,pattern = ""))
-#NINEMERS_AA_PX_DT %>% mutate(across(starts_with("V"), ~ifelse(.x=="A", "Hydrophobic","!Hydrophobic")))
-
-TENMERS_AA_PX_DT=TENMERS_AA_PX_DT%>% as.data.table()%>%
-        mutate(V1 = ifelse(V1 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V2 = ifelse(V2 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V3 = ifelse(V3 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V4 = ifelse(V4 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V5 = ifelse(V5 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V6 = ifelse(V6 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V7 = ifelse(V7 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V8 = ifelse(V8 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V9 = ifelse(V9 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))%>%
-        mutate(V10 = ifelse(V10 %in% HYDROPHOBIC_RESIDUES, "Hydro","!Hydro"))
-
-TENMERS_AA_PX_MATRIX = TENMERS_AA_PX_DT %>% select(!Peptide)
-sparse_matrix = sparse.model.matrix(logsOdds ~ ., data = TENMERS_AA_PX_MATRIX)[,-1]
-TENMERS_AA_PX_DT=TENMERS_AA_PX_DT%>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-bst = xgboost(data=sparse_matrix, label = TENMERS_AA_PX_DT$BINARY_OUT, eta=1, objective="binary:logistic",max_depth=4,nthread=2, nrounds=15)
-importance = xgb.importance(feature_names = colnames(sparse_matrix), model = bst)
-importance
-
-xgb.plot.importance(importance_matrix = importance)
-
-TENMERS_AA_PX_DT=data.table(Peptide=TENMERS$Peptide, logsOdds=TENMERS$logsOdds) %>% cbind(stringr::str_split_fixed(TENMERS$Peptide,n=10,pattern = ""))
-TENMERS_AA_PX_DT=TENMERS_AA_PX_DT%>% as.data.table()%>%
-        mutate(V1 = ifelse(V1 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V2 = ifelse(V2 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V3 = ifelse(V3 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V4 = ifelse(V4 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V5 = ifelse(V5 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V6 = ifelse(V6 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V7 = ifelse(V7 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V8 = ifelse(V8 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V9 = ifelse(V9 %in% HYDROPHOBIC_RESIDUES, 1,0))%>%
-        mutate(V10 = ifelse(V10 %in% HYDROPHOBIC_RESIDUES, 1,0))
-
-
-
-#linear_model = lm(formula = logsOdds ~ V1+V2+V3+V4+V5+V6+V7+V8+V9, data=NINEMERS_AA_PX_DT)
-#summary(linear_model)
-
-
-```
-
-
-## useboruta on binarised hydrophobicity in PX, incorporating anchor and tcr hydro fraction
-- nothing significant for both logs odds and binary out
-
-```{r}
-
-TENMERS_AA_PX_DT=TENMERS_AA_PX_DT %>% inner_join(MUTS_DT %>% select(Peptide, Anchor_HydroFraction, TCR_HydroFraction))%>%
-        dplyr::rename(AnchorHydro=Anchor_HydroFraction, TCRHydro=TCR_HydroFraction)
-TENMERS_AA_PX_DT_FULL=TENMERS_AA_PX_DT
-
-# Boruta using logsOdds out
-boruta_output <- Boruta(logsOdds ~ ., data=TENMERS_AA_PX_DT%>% select(! Peptide), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-# Using binary output
-TENMERS_AA_PX_DT=TENMERS_AA_PX_DT %>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-boruta_output <- Boruta(BINARY_OUT ~ ., data=TENMERS_AA_PX_DT%>% select(! c(Peptide, logsOdds)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-
-```
-
-
-### One hot encode again. V7L == 1, means WT contains L in P7.
-- LOGS ODDS: V3V, V7L importaant. Perhaps V5K, V6P, V7G/S, V8G
-- BINARY: V1F, V2E, V7G
-
-```{r}
-
-TENMERS_AA_PX_DT=data.table(Peptide=TENMERS$Peptide, logsOdds=TENMERS$logsOdds) %>% cbind(stringr::str_split_fixed(TENMERS$Peptide,n=10,pattern = ""))
-
-TENMERS_AA_ONEHOT=caret::dummyVars(" ~ . ", TENMERS_AA_PX_DT %>% select(! c(Peptide, logsOdds)))
-newdata <- data.frame(predict(TENMERS_AA_ONEHOT, newdata = TENMERS_AA_PX_DT %>% select(! c(Peptide, logsOdds))))
-
-TENMERS_AA_ONEHOT=TENMERS_AA_PX_DT %>% select(Peptide, logsOdds)%>% cbind(newdata)
-TENMERS_AA_ONEHOT=TENMERS_AA_ONEHOT %>% mutate(BINARY_OUT = ifelse(logsOdds>0,1,0))
-colnames(TENMERS_AA_ONEHOT) = gsub("V","",colnames(TENMERS_AA_ONEHOT))
-
-TENMERS_AA_PX_DT_FULL=TENMERS_AA_PX_DT_FULL %>% inner_join(TENMERS_AA_ONEHOT)
-
-boruta_output <- Boruta(logsOdds ~ ., data=TENMERS_AA_ONEHOT%>% select(! c(Peptide, BINARY_OUT)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-boruta_output <- Boruta(BINARY_OUT ~ ., data=TENMERS_AA_ONEHOT%>% select(! c(Peptide, logsOdds)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-```
-
-### AA comp
-- tentative A,G,N in WT.
-
-```{r}
-# Simply AA composition
-AACOMP_DT_TENMERS=foreach::foreach(i=1:nrow(TENMERS_AA_PX_DT),.combine = "rbind", .packages = c("dplyr","data.table","protr"))%do% {
-  PEPTIDE = TENMERS_AA_PX_DT %>% filter(row_number()==i) %>% pull(Peptide)
-  AA_COMP = protr::extractAAC(PEPTIDE)
-  DT=TENMERS_AA_PX_DT %>% filter(row_number()==i) %>% select(Peptide, logsOdds)
-  AA_COMP_DT= t(AA_COMP) %>% tibble::as.tibble()
-  DT %>% cbind(AA_COMP_DT)
-}
-
-boruta_output <- Boruta(logsOdds ~ ., data=AACOMP_DT_TENMERS%>% select(! c(Peptide)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-linear_model = lm(formula = logsOdds ~ G+S+T+Y+C+N+Q+K+R+H+D+E+P+A+W+F+L+I+M+V, data=AACOMP_DT_TENMERS)
-summary(linear_model)
-
-```
-
-#### everything: only V7l, and perhaps N.
-
-```{r}
-# cmobine everything
-TENMERS_AA_PX_DT_FULL=TENMERS_AA_PX_DT_FULL %>% inner_join(AACOMP_DT_TENMERS)
-boruta_output <- Boruta(logsOdds ~ ., data=TENMERS_AA_PX_DT_FULL%>% select(! c(Peptide, BINARY_OUT)), doTrace=0)
-roughFixMod <- TentativeRoughFix(boruta_output)
-imps <- attStats(roughFixMod)
-imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
-head(imps2[order(-imps2$meanImp), ])  # descending sort
-boruta_output
-plot(boruta_output, cex.axis=.7, las=2, xlab="", main="Variable Importance")
-
-
-```
-
-```{r}
-chemistry %>% DT::datatable()
-```
 
 ## Take a simpler approach: 9mers
 
@@ -2172,15 +1234,12 @@ chemistry %>% DT::datatable()
 
 ```{r,dpi=300}
 
-#EPITOPE_ESCAPE_AVG=FULL_PREDICTIONS_DT %>% mutate(Score = WuhanScore-Prediction)
-# Summarise the data per epitope. Generate one mean logs odds across each epitope. Maybe rethink this. mean of a mean score
-#MUTS_DT=summarySE(EPITOPE_ESCAPE_AVG, measurevar="Score", groupvars=c("Peptide"))
 
-HIGH_SET = MUTS_DT%>% slice_max(order_by = logsOdds, n=9) %>% mutate(Dataset = "High")
-LOW_SET = MUTS_DT%>% slice_min(order_by = logsOdds, n=9) %>% mutate(Dataset = "Negative")
+HIGH_SET = MUTS_DT%>% slice_max(order_by = logsOdds, n=9,with_ties = FALSE) %>% mutate(Dataset = "High")
+LOW_SET = MUTS_DT%>% slice_min(order_by = logsOdds, n=9, with_ties = FALSE) %>% mutate(Dataset = "Negative")
 
-LOW_HIGH_DT= LOW_SET %>% rbind(HIGH_SET)
-
+LOW_HIGH_DT= LOW_SET %>% rbind(HIGH_SET) %>% distinct()
+LOW_HIGH_DT %>% DT::datatable()
 my_comparisons = list(c("High","Negative"))
 
 
@@ -2194,78 +1253,38 @@ my_comparisons = list(c("High","Negative"))
 ### Look at fraction of polar, neutral, basic, acidic.
 
 ```{r,dpi=300,warning=FALSE}
+
 REMAINING_CHEMISTRY=chemistry #%>% filter(! group == "Hydrophobic")
 
-#REMAINING_CHEMISTRY_MUTS_DT=foreach::foreach(i=1:length(unique(REMAINING_CHEMISTRY$group)), .combine = "rbind", .packages = c("dplyr","data.table"))%do% {
- # CHEMISTRY_GRP = unique(REMAINING_CHEMISTRY$group)[i]
- # CHEMISTRY_AAS = REMAINING_CHEMISTRY %>% filter(group == CHEMISTRY_GRP)%>% pull(letter)
- # MUTS_DT %>% select(Peptide,logsOdds, TCRContact_Peptide, AnchorRes)%>%
- #         mutate(Anchor_Count =  stringi::stri_count_regex(MUTS_DT$AnchorRes, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
- #         mutate(Anchor_Fraction = Anchor_Count/nchar(AnchorRes))%>% select(!Anchor_Count)%>% mutate(group=CHEMISTRY_GRP)%>%
- #         mutate(TCRContact_Count =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
- #         mutate(TCRContact_Fraction = TCRContact_Count/nchar(TCRContact_Peptide))%>% select(!TCRContact_Count)%>% mutate(group=CHEMISTRY_GRP)
-#}
 
 REMAINING_CHEMISTRY_MUTS_DT=foreach::foreach(i=1:length(unique(REMAINING_CHEMISTRY$group)), .combine = "rbind", .packages = c("dplyr","data.table"))%do% {
-  CHEMISTRY_GRP = unique(REMAINING_CHEMISTRY$group)[i]
+  CHEMISTRY_GRP = unique(REMAINING_CHEMISTRY$group)[i] # get group of chemistry i.e polar, etc
   CHEMISTRY_AAS = REMAINING_CHEMISTRY %>% filter(group == CHEMISTRY_GRP)%>% pull(letter)
-  MUTS_DT %>% select(Peptide,logsOdds, TCRContact_Peptide, AnchorRes)%>%
-          mutate(Anchor_Count =  stringi::stri_count_regex(MUTS_DT$AnchorRes, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
-          mutate(Anchor_Fraction = Anchor_Count/nchar(AnchorRes))%>% select(!Anchor_Count)%>% mutate(group=CHEMISTRY_GRP)%>%
-          mutate(TCRContact_Count =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(CHEMISTRY_AAS,collapse = "|"))) %>%
-          mutate(TCRContact_Fraction = TCRContact_Count/nchar(TCRContact_Peptide))%>% select(!TCRContact_Count)%>% mutate(group=CHEMISTRY_GRP)
+  MUTS_DT %>% select(Peptide,logsOdds, TCRContact_Peptide, NonContactRes)%>%
+          mutate(NC_Count =  stringi::stri_count_regex(MUTS_DT$NonContactRes, paste0(CHEMISTRY_AAS,collapse = "|"))) %>% # calculate number of residues in group in non contact positions
+          mutate(NC_Fraction = NC_Count/nchar(NonContactRes))%>% select(!Anchor_Count)%>% mutate(group=CHEMISTRY_GRP)%>% # calculate fraction of residues in chemistry group in non contact positions
+          mutate(TCRContact_Count =  stringi::stri_count_regex(MUTS_DT$TCRContact_Peptide, paste0(CHEMISTRY_AAS,collapse = "|"))) %>% # calculate number of residues in group in TCR contact positions
+          mutate(TCRContact_Fraction = TCRContact_Count/nchar(TCRContact_Peptide))%>% select(!TCRContact_Count)%>% mutate(group=CHEMISTRY_GRP) # calculate fraction of residues in chemistry group in TCR contact positions
 }
 
-LOW_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% LOW_SET$Peptide)%>% mutate(Dataset = "Negative")#
-HIGH_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% HIGH_SET$Peptide)%>% mutate(Dataset = "High")
+LOW_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% LOW_SET$Peptide)%>% mutate(Dataset = "Negative") # label low set i.e with low escape potential
+HIGH_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% HIGH_SET$Peptide)%>% mutate(Dataset = "High") # label high set i.e with high escape potential
 TOLERANT_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% c("TLACFVLAAV","YYHKNNKSW","FGEVFNATRF","QTGKIADYNY","QWNLVIGFLF","GEVFNATRF","FQPTNGVGY",
-                                                                    "SYQTQTNSPR","DSKVGGNYNY"))%>% mutate(Dataset = "Negligible")
-#TOLERANT_SET = REMAINING_CHEMISTRY_MUTS_DT%>% filter(Peptide %in% c("GEVFNATRF","SYQTQTNSPR","FGEVFNATRF","CNDPFLGVYY","HVSGTNGTK"))%>% mutate(Dataset = "Negligible")
+                                                                    "SYQTQTNSPR","DSKVGGNYNY"))%>% mutate(Dataset = "Negligible") # select tolerant set of peptides i.e those with escpe potential and se around zero
+# Bind together DT of proportiond of selected epitopes with high, neg, low escpe potential and fraction of chemistry group residues in TCr vs non cointact positions
 LOW_HIGH_DT= LOW_SET %>% rbind(HIGH_SET)%>% rbind(TOLERANT_SET)%>% mutate(Dataset = factor(Dataset, levels = c("High","Negligible","Negative")))
-#ENHANCED_IMP_DT %>%
-#        ggplot(aes(x=Dataset, y=Anchor_Fraction, fill=Dataset))+
-#        geom_dotplot(binaxis="y", stackdir="center",stackratio=1,dotsize = 0.7,binpositions = "all")+
-#        theme_pubr(base_size = 16) +
-#        facet_grid(~group)+
-#        stat_summary(fun=mean, geom="crossbar", width=0.7) +
-#        stat_compare_means(comparisons = my_comparisons, label="p.signif")
-
-HYDROPHOBICITY_ANCHORFREQ_PLT=LOW_HIGH_DT %>% filter(group == "Hydrophobic") %>%
-        ggviolin(x="Dataset",y="Anchor_Fraction",color="Dataset", add=c("boxplot","jitter"),trim=TRUE,palette = "jco")+
-        stat_compare_means(comparisons = my_comparisons, label="p.signif",tip.length = 0.05,label.y=1.09)+
-        theme_pubr(base_size = 16)+ylab("Freq. of hydrophobic residues") +
-        facet_grid(~group)
-HYDROPHOBICITY_ANCHORFREQ_PLT
-
-#HYDROPHOBICITY_ANCHORFREQ_PLT=LOW_HIGH_DT %>% filter(group == "Hydrophobic") %>%
- #       ggboxplot(x="Dataset",y="Anchor_Fraction",color="Dataset", add=c("jitter"),palette = "jco")+
-  #      stat_compare_means(comparisons = my_comparisons, label="p.signif",tip.length = 0.05,label.y=1.05)+
-   #     theme_pubr(base_size = 16)+ylab("Freq. of hydrophobic residues") +
-    #    facet_grid(~group)
-#HYDROPHOBICITY_ANCHORFREQ_PLT
-
-#HYDROPHOBICITY_ANCHORFREQ_PLT=LOW_HIGH_DT %>% filter(group == "Hydrophobic") %>%
- #       ggplot(aes(x=Dataset, y=Anchor_Fraction, color=Dataset))+geom_violin()+geom_jitter()+
-  #      stat_compare_means(comparisons = my_comparisons, label="p.signif",tip.length = 0.05,label.y=1.09)+
-   #     theme_pubr(base_size = 16)+ylab("Freq. of hydrophobic residues") +
-    #    facet_grid(~group)
-#HYDROPHOBICITY_ANCHORFREQ_PLT
+HYDROPHOBICITY_ANCHORFREQ_PLT=LOW_HIGH_DT %>% filter(group == "Hydrophobic") %>% distinct()%>%
+        mutate(Anchor_Fraction = round(Anchor_Fraction,digits=3))%>%
+        ggboxplot(x="Dataset",y="Anchor_Fraction",color="Dataset", add=c("jitter"),palette = "jco")+
+        stat_compare_means(comparisons = my_comparisons, label="p.signif",tip.length = 0.05,label.y=1.05)+
+        theme_pubr(base_size = 16)+ylab("Freq. of hydrophobic residues")
 
 
 saveRDS(HYDROPHOBICITY_ANCHORFREQ_PLT,file="HYDROPHOBICITY_ANCHORFREQ_PLT.rds")
 
-#ENHANCED_IMP_DT %>%
- #       ggviolin(x="Dataset",y="TCRContact_Fraction",color="Dataset", add=c("boxplot","jitter"),palette = "jco")+
-  #      stat_compare_means(comparisons = my_comparisons, label="p.signif",label.y = 1.6,label.sep = 0.2)+
-   #     theme_pubr(base_size = 16) +
-    #    facet_grid(~group)
-
-
-
 ```
 
 ## Compare mutagenesis analysis of groups
-- What separates Tolerant vs impaired? hlas bound? number of hlas?
 
 ```{r,dpi=300,warning=FALSE}
 
@@ -2282,48 +1301,39 @@ saveRDS(HLA_TRANSITIONPOT_GRPS_PLT,file="HLA_TRANSITIONPOT_GRPS_PLT.rds")
 ## What residues and positions of e.g.. hydrophobic residues are enriched in grups?
 
 ```{r,dpi=300, fig.height = 18}
-
-NINE_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==9)
-NINE_LOW_HIGH_DT=NINE_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(NINE_LOW_HIGH_DT$Peptide,n=9,pattern = ""))
-TEN_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==10)
-TEN_LOW_HIGH_DT=TEN_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(TEN_LOW_HIGH_DT$Peptide,n=10,pattern = ""))
-
-
-
-#NINE_ENHANCED_IMP_DT%>% mutate("10"="-")%>% rbind(TEN_ENHANCED_IMP_DT)%>%
- #       pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>%
-  #      inner_join(chemistry)%>%filter(position %in% c(1,2,9,10))%>%
-   #
-#ggplot(aes(x=Peptide, y=letter, color=group))+geom_point()+facet_wrap(~position+Dataset,scales="free_x",nrow=4)+rotate_x_text()
+# Calculate real (observational) data
+NINE_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==9) # select peptides with 9 residues
+NINE_LOW_HIGH_DT=NINE_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(NINE_LOW_HIGH_DT$Peptide,n=9,pattern = "")) # split into columns
+TEN_LOW_HIGH_DT = LOW_HIGH_DT%>% select(Peptide, Dataset)%>% distinct() %>% filter(nchar(Peptide)==10) # select peptides with 10 residues
+TEN_LOW_HIGH_DT=TEN_LOW_HIGH_DT%>% cbind(stringr::str_split_fixed(TEN_LOW_HIGH_DT$Peptide,n=10,pattern = "")) # split into columns
 
 
 ```
 
 ```{r,dpi=300}
-
+# Generate a background distribution of frequency of amino acids in the 9mer and 10mer peptides, as above for observed
 NINEMER_AA_BACKGROUND=REMAINING_CHEMISTRY_MUTS_DT %>% select(Peptide)%>% distinct() %>% filter(nchar(Peptide)==9)
 NINEMER_AA_BACKGROUND=NINEMER_AA_BACKGROUND%>% cbind(stringr::str_split_fixed(NINEMER_AA_BACKGROUND$Peptide,n=9,pattern = ""))
 
 TENMER_AA_BACKGROUND=REMAINING_CHEMISTRY_MUTS_DT %>% select(Peptide)%>% distinct() %>% filter(nchar(Peptide)==10)
 TENMER_AA_BACKGROUND=TENMER_AA_BACKGROUND%>% cbind(stringr::str_split_fixed(TENMER_AA_BACKGROUND$Peptide,n=10,pattern = ""))
 
-BACKGROUND_AA_DISTR=NINEMER_AA_BACKGROUND %>% mutate("10"="-") %>% rbind(TENMER_AA_BACKGROUND)
+BACKGROUND_AA_DISTR=NINEMER_AA_BACKGROUND %>% mutate("10"="-") %>% rbind(TENMER_AA_BACKGROUND) # combine background into one data frame
 BACKGROUND_AA_DISTR=BACKGROUND_AA_DISTR%>%
-        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>% ungroup()
+        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>% ungroup() # convert to long format
 
 SAMPLED_BACKGROUND_AA_DISTR=foreach::foreach(i=1:10, .combine = "rbind", .packages = c("dplyr","data.table"))%do% {
-    SAMPLED_PEPS=BACKGROUND_AA_DISTR %>% select(Peptide) %>% distinct()%>% sample_n(size=5)%>% pull(Peptide)
-    BACKGROUND_AA_DISTR %>% filter(Peptide %in% SAMPLED_PEPS)%>% group_by(letter)%>% dplyr::summarise(n=n())%>% mutate(ID=i)
+    SAMPLED_PEPS=BACKGROUND_AA_DISTR %>% select(Peptide) %>% distinct()%>% sample_n(size=5)%>% pull(Peptide) # shuffle dataset to generate stat background
+    BACKGROUND_AA_DISTR %>% filter(Peptide %in% SAMPLED_PEPS)%>% group_by(letter)%>% dplyr::summarise(n=n())%>% mutate(ID=i) # calculate frequency of each amino acid
 }
 
 SAMPLED_BACKGROUND_AA_DISTR=SAMPLED_BACKGROUND_AA_DISTR %>% mutate(Dataset = "CTRL")%>% select(!ID)%>% inner_join(chemistry %>% select(! col))
-
-AA_COMP_TRANSITIONPOT_GRPS=NINE_LOW_HIGH_DT%>% mutate("10"="-")%>% rbind(TEN_LOW_HIGH_DT)%>%
-        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>%
-        inner_join(chemistry)%>% group_by(Dataset, letter, group) %>% dplyr::summarise(n=n())%>%
+AA_COMP_TRANSITIONPOT_GRPS=NINE_LOW_HIGH_DT%>% mutate("10"="-")%>% rbind(TEN_LOW_HIGH_DT)%>% # combine into one data frame
+        pivot_longer(cols = `1`:`10`)%>%dplyr::rename(letter=value,position=name)%>% # convert to long format
+        inner_join(chemistry)%>% group_by(Dataset, letter, group) %>% dplyr::summarise(n=n())%>% # calculate obs of each amino acid
         rbind(SAMPLED_BACKGROUND_AA_DISTR)%>%
-        group_by(Dataset, letter, group)%>% dplyr::summarise(meanN=mean(n), sd=sd(n))%>%
-        filter(group == "Hydrophobic")%>%
+        group_by(Dataset, letter, group)%>% dplyr::summarise(meanN=mean(n), sd=sd(n))%>% # calculate mean and sd of each amino acid per group
+        filter(group == "Hydrophobic")%>% # filter to only hydrophobic amino acids
         ggplot(aes(x=letter, y=meanN, fill=Dataset))+geom_bar(stat="identity",position=position_dodge())+
         geom_errorbar(aes(ymin=meanN-sd, ymax=meanN+sd), width=.2, position=position_dodge(.9))+
         facet_wrap(~group,scales="free",nrow=1)+theme_pubr(base_size = 16)+ylab("Count")+xlab("Amino Acid")
@@ -2332,131 +1342,6 @@ saveRDS(AA_COMP_TRANSITIONPOT_GRPS,file="AA_COMP_TRANSITIONPOT_GRPS.rds")
 
 
 ```
-
-# contact positions
-## 9mers
-
-```{r,dpi=300}
-HYDRO_AA=chemistry %>% filter(group=="Hydrophobic")%>% pull(letter)
-
-LENGTH=9
-POSITIONS = c(3,4,5,6,7,8)
-
-MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-
-```
-
-
-
-## 10mers
-
-
-```{r,dpi=300}
-LENGTH=10
-POSITIONS = c(3,4,5,6,7,8,9)
-
-MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-```
-
-# anchor
-
-## 9mers
-
-```{r,dpi=300}
-HYDRO_AA=chemistry %>% filter(group=="Hydrophobic")%>% pull(letter)
-
-LENGTH=9
-POSITIONS = c(1,2,9)
-
-MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-
-```
-
-
-
-## 10mers
-
-
-```{r,dpi=300}
-LENGTH=10
-POSITIONS = c(1,2,10)
-
-MUTS_TO_ANALYSE=FULL_PREDICTIONS_DT %>% filter(ChangeTo %in% HYDRO_AA)%>% filter(SeqMutationPos %in% POSITIONS)%>% filter(Length == LENGTH)%>%
-        mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo))%>% group_by(ChangeToPos)%>%
-        dplyr::summarise(meanlogsOdds=mean(logsOdds),n=n())%>% arrange(desc(meanlogsOdds))%>% filter(! n<20)%>%
-        slice_max(order_by = meanlogsOdds, prop = 0.3)%>% pull(ChangeToPos)
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="MT_MHCScore", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-FULL_PREDICTIONS_DT %>% mutate(ChangeToPos=paste0(SeqMutationPos,"_",ChangeTo)) %>% filter(ChangeToPos%in% MUTS_TO_ANALYSE)%>%
-        ggscatter(x="logsOdds",y="TRAPP_MUTANT_Prediction", # Customize reg. line
-   conf.int = TRUE, # Add confidence interval
-   cor.coef = TRUE, # Add correlation coefficient. see ?stat_cor
-   cor.coeff.args = list(method = "pearson", label.x = -3, label.sep = "\n"),
-        add="loess")
-
-```
-
-
 
 
 
